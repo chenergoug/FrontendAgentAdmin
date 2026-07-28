@@ -11,7 +11,11 @@
     "dev:service": "tsx service/index.ts",
     "dev:electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
     "build": "tsc -p tsconfig.json && vite build && tsc -p electron/tsconfig.json && tsc -p service/tsconfig.json",
-    "package:win": "npm run build && electron-builder --win nsis --x64"
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip",
+    "package:mac:x64": "npm run build && electron-builder --mac dmg zip --x64",
+    "package:mac:arm64": "npm run build && electron-builder --mac dmg zip --arm64",
+    "package:mac:universal": "npm run build && electron-builder --mac dmg zip --universal"
   },
   "build": {
     "appId": "com.ergou.frontend-agent-admin",
@@ -51,9 +55,14 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "identity": null,
+      "darkModeSupport": true,
+      "minimumSystemVersion": "11.0"
     }
   },
   "dependencies": {
