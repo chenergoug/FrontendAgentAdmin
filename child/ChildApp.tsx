@@ -1,5 +1,5 @@
 import { BugOutlined } from '@ant-design/icons'
-import { Badge, Card, Layout, Menu, Result, Spin, message } from 'antd'
+import { Card, Layout, Menu, Result, Spin, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { ollamaApi, projectApi } from '../src/api'
 import type { OllamaStatus, ProjectRecord } from '../src/types'
@@ -145,8 +145,8 @@ export function ChildApp() {
         <div className="child-runtime-status">
           {hasProject && (
             <span className="child-runtime-content">
+              <span className="child-runtime-indicator" style={{ backgroundColor: clientRuntime.color }} />
               <span>{clientRuntime.text}</span>
-              <Badge color={clientRuntime.color} />
             </span>
           )}
         </div>

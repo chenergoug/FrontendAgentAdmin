@@ -11,6 +11,7 @@
 }
 
 .child-runtime-status {
+  position: relative;
   min-height: 52px;
   padding: 16px 20px 10px;
 }
@@ -23,6 +24,15 @@
   color: rgba(255, 255, 255, 0.85);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+.child-runtime-indicator {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  width: 8px;
+  height: 32px;
+  border-radius: 0 4px 4px 0;
 }
 
 .child-main {
