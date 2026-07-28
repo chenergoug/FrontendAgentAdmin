@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
+    base: './',
     plugins: [react()],
     server: {
       host: env.VITE_HOST || '127.0.0.1',

@@ -1,14 +1,47 @@
 import './env.js';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { appendFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.RENDERER_URL ?? 'http://127.0.0.1:5180';
 const serviceUrl = process.env.SERVICE_URL ?? 'http://127.0.0.1:3880/api';
 const projectWindows = new Map<string, BrowserWindow>();
 const closingProjectIds = new Set<string>();
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+let mainWindow: BrowserWindow | null = null;
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+
+async function serviceIsReady() {
+  try {
+    const response = await fetch(`${serviceUrl}/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function startPackagedService() {
+  if (!app.isPackaged || await serviceIsReady()) return;
+  const entry = path.join(app.getAppPath(), 'dist-service/index.js');
+  await import(pathToFileURL(entry).href);
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (await serviceIsReady()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('内置服务启动超时');
+}
 
 function createWindowOptions(title: string) {
   return {
@@ -54,6 +87,10 @@ async function fetchProjectName(projectId: string) {
 
 function createMainWindow() {
   const window = new BrowserWindow(createWindowOptions('Frontend Agent Admin'));
+  mainWindow = window;
+  window.on('closed', () => {
+    if (mainWindow === window) mainWindow = null;
+  });
   window.maximize();
   void loadMainPage(window);
   return window;
@@ -128,28 +165,9 @@ ipcMain.handle('project-client:close', async (_event, projectId: string) => {
   return { closed: false, reason: 'Project client is not opened in this Electron process.' };
 });
 
-app.whenReady().then(async () => {
-  const mainWindow = createMainWindow();
-  if (process.env.ELECTRON_ACCEPTANCE === '1' || process.env.ELECTRON_ACCEPTANCE_RESUME === '1' || process.env.ELECTRON_ACCEPTANCE_GENERATE === '1' || process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1' || process.env.ELECTRON_ACCEPTANCE_BASIC_ADMIN === '1' || process.env.ELECTRON_ACCEPTANCE_BASIC_VALIDATE === '1') {
-    const { resumeBasicAdminValidation, resumeGenerationAcceptance, resumePendingAcceptance, resumeValidationAcceptance, runBasicAdminFullAcceptance, runMainAcceptance } = await import('./acceptance-driver.js');
-    mainWindow.webContents.once('did-finish-load', () => {
-      const run = process.env.ELECTRON_ACCEPTANCE_BASIC_VALIDATE === '1'
-        ? resumeBasicAdminValidation(mainWindow)
-        : process.env.ELECTRON_ACCEPTANCE_BASIC_ADMIN === '1'
-          ? runBasicAdminFullAcceptance(mainWindow)
-        : process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1'
-          ? resumeValidationAcceptance(mainWindow)
-        : process.env.ELECTRON_ACCEPTANCE_GENERATE === '1'
-          ? resumeGenerationAcceptance(mainWindow)
-        : process.env.ELECTRON_ACCEPTANCE_RESUME === '1'
-          ? resumePendingAcceptance(mainWindow)
-          : runMainAcceptance(mainWindow);
-      void run.catch((error) => {
-        console.error('Electron acceptance failed:', error);
-        appendFileSync(path.join(app.getPath('userData'), 'electron-acceptance.log'), `${new Date().toISOString()} ${error instanceof Error ? error.stack : String(error)}\n`);
-      });
-    });
-  }
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  await startPackagedService();
+  createMainWindow();
 });
 
 app.on('window-all-closed', () => {
