@@ -1,0 +1,73 @@
+{
+  "name": "frontend-agent-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5180",
+    "dev:service": "tsx service/index.ts",
+    "dev:electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
+    "build": "tsc -p tsconfig.json && vite build && tsc -p electron/tsconfig.json && tsc -p service/tsconfig.json"
+  },
+  "build": {
+    "appId": "com.ergou.frontend-agent-admin",
+    "productName": "Frontend Agent Admin",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "dist-service/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "config/default-data",
+        "to": "default-data"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "perMachine": false
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools"
+    }
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.0",
+    "@ant-design/plots": "^2.6.5",
+    "@vitejs/plugin-react": "^6.0.4",
+    "antd": "^6.1.0",
+    "electron": "^40.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tsx": "^4.21.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
+  }
+}

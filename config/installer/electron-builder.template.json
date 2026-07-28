@@ -1,0 +1,39 @@
+{
+  "appId": "com.ergou.frontend-agent-admin",
+  "productName": "Frontend Agent Admin",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**",
+    "dist-electron/**",
+    "dist-service/**",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "config/default-data",
+      "to": "default-data"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "perMachine": false
+  },
+  "mac": {
+    "target": ["dmg"],
+    "category": "public.app-category.developer-tools"
+  }
+}

@@ -1,0 +1,55 @@
+.child-layout {
+  min-height: 100vh;
+}
+
+.child-sider {
+  min-height: 100vh;
+  background: #141922 !important;
+}
+
+.child-brand {
+  display: grid;
+  gap: 4px;
+  padding: 18px 18px 14px;
+}
+
+.child-main {
+  min-width: 0;
+  background: #eef2f7;
+}
+
+.child-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.child-content {
+  min-width: 0;
+  padding: 16px;
+}
+
+.child-fill {
+  min-height: calc(100vh - 88px);
+}
+
+.child-panel-card {
+  height: calc(100vh - 88px);
+  overflow: auto;
+}
+
+.task-log-view {
+  min-height: 220px;
+  max-height: 360px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #0f172a;
+  color: #dbeafe;
+  border-radius: 6px;
+}

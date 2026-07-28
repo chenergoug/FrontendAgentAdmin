@@ -1,0 +1,126 @@
+{
+  "system": {
+    "appConfig": {
+      "appName": "Frontend Agent Admin",
+      "version": "0.1.0",
+      "storageVersion": 1
+    },
+    "pathConfig": {
+      "dataDir": "{{USER_SELECTED_DATA_DIR}}",
+      "configDir": "{{USER_SELECTED_DATA_DIR}}/system",
+      "logDir": "{{USER_SELECTED_DATA_DIR}}/logs"
+    }
+  },
+  "projects": [
+    {
+      "id": "p-drone",
+      "name": "无人机后台管理",
+      "source": "新建",
+      "shape": "全栈 Monorepo",
+      "deviceType": "PC端",
+      "businessType": "后台管理 / GIS 地图 / 视频监控",
+      "rootPath": "D:\\ErGou\\Projects\\drone-admin",
+      "gitRemote": "https://git.example.com/drone/drone-admin.git",
+      "branch": "develop",
+      "serverUrl": "https://test-drone-admin.example.com",
+      "devCommand": "pnpm dev",
+      "buildCommand": "pnpm build",
+      "lintCommand": "pnpm lint",
+      "testCommand": "pnpm test",
+      "configVersion": 1,
+      "status": "ready",
+      "updatedAt": "2026-07-28 21:30:00",
+      "description": "无人机设备、飞行任务、实时监控、媒体资源、告警、报表和权限管理后台。",
+      "requirement": "登录注册、无人机管理、实时监控、飞行任务、媒体资源、告警中心、数据分析、RBAC、系统配置。"
+    }
+  ],
+  "models": [
+    {
+      "id": "m-online",
+      "name": "线上代码模型",
+      "type": "线上模型",
+      "provider": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "modelId": "gpt-code",
+      "contextWindow": 128000,
+      "maxOutput": 8192,
+      "timeout": 120,
+      "enabled": true,
+      "healthy": true,
+      "checkedAt": "2026-07-28 21:20"
+    },
+    {
+      "id": "m-local",
+      "name": "本地 Qwen Coder 14B",
+      "type": "本地离线模型",
+      "provider": "Ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "modelId": "qwen2.5-coder:14b",
+      "contextWindow": 32768,
+      "maxOutput": 4096,
+      "timeout": 180,
+      "enabled": true,
+      "healthy": false,
+      "checkedAt": "2026-07-28 20:12"
+    }
+  ],
+  "agents": [
+    {
+      "id": "a-router",
+      "name": "主调度 Agent",
+      "category": "主调度",
+      "modelName": "线上代码模型",
+      "risk": "低",
+      "enabled": true,
+      "description": "拆分任务、选择专项 Agent、控制工作流状态。",
+      "prompt": "你是前端开发平台主调度 Agent，只输出调度计划和下一步动作。",
+      "permissions": ["读取项目配置", "读取任务快照", "生成调度计划"],
+      "approvalRules": ["新增高风险专项 Agent 调用需要确认"]
+    },
+    {
+      "id": "a-front",
+      "name": "前端开发 Agent",
+      "category": "前端开发",
+      "modelName": "线上代码模型",
+      "risk": "中",
+      "enabled": true,
+      "description": "按实现规划生成前端 Diff。",
+      "prompt": "你是资深前端开发工程师，所有修改必须输出 Diff，并保持项目现有风格。",
+      "permissions": ["读取文件", "生成 Diff", "用户确认后写文件"],
+      "approvalRules": ["应用 Diff 需要确认", "安装依赖需要确认"]
+    }
+  ],
+  "settings": [
+    {
+      "id": "s1",
+      "group": "数据目录",
+      "name": "默认数据目录",
+      "value": "{{USER_SELECTED_DATA_DIR}}",
+      "description": "保存系统配置、项目配置、Agent 配置和本地日志。"
+    },
+    {
+      "id": "s2",
+      "group": "子客户端限制",
+      "name": "单项目子客户端数量",
+      "value": "1",
+      "description": "同一个项目同一时间只能打开一个子客户端。"
+    }
+  ],
+  "analytics": {
+    "modelUsage": [
+      { "day": "周一", "count": 32 },
+      { "day": "周二", "count": 46 },
+      { "day": "周三", "count": 41 },
+      { "day": "周四", "count": 58 },
+      { "day": "周五", "count": 66 },
+      { "day": "周六", "count": 39 },
+      { "day": "周日", "count": 51 }
+    ],
+    "agentUsage": [
+      { "agent": "主调度", "count": 18 },
+      { "agent": "需求分析", "count": 9 },
+      { "agent": "实现规划", "count": 12 },
+      { "agent": "前端开发", "count": 21 }
+    ]
+  }
+}
