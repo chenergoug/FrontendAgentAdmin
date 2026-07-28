@@ -1,5 +1,6 @@
+import './env.js';
 import http from 'node:http';
-import { port } from './config.js';
+import { host, port } from './config.js';
 import { send } from './http-utils.js';
 import { handleApiRequest } from './router.js';
 import { bootstrapStorage } from './storage.js';
@@ -13,6 +14,6 @@ const server = http.createServer((request, response) => {
   });
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`Frontend Agent Admin Service listening at http://127.0.0.1:${port}`);
+server.listen(port, host, () => {
+  console.log(`Frontend Agent Admin Service listening at http://${host}:${port}`);
 });

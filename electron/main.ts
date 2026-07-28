@@ -1,3 +1,4 @@
+import './env.js';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -129,11 +130,15 @@ ipcMain.handle('project-client:close', async (_event, projectId: string) => {
 
 app.whenReady().then(async () => {
   const mainWindow = createMainWindow();
-  if (process.env.ELECTRON_ACCEPTANCE === '1' || process.env.ELECTRON_ACCEPTANCE_RESUME === '1' || process.env.ELECTRON_ACCEPTANCE_GENERATE === '1' || process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1') {
-    const { resumeGenerationAcceptance, resumePendingAcceptance, resumeValidationAcceptance, runMainAcceptance } = await import('./acceptance-driver.js');
+  if (process.env.ELECTRON_ACCEPTANCE === '1' || process.env.ELECTRON_ACCEPTANCE_RESUME === '1' || process.env.ELECTRON_ACCEPTANCE_GENERATE === '1' || process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1' || process.env.ELECTRON_ACCEPTANCE_BASIC_ADMIN === '1' || process.env.ELECTRON_ACCEPTANCE_BASIC_VALIDATE === '1') {
+    const { resumeBasicAdminValidation, resumeGenerationAcceptance, resumePendingAcceptance, resumeValidationAcceptance, runBasicAdminFullAcceptance, runMainAcceptance } = await import('./acceptance-driver.js');
     mainWindow.webContents.once('did-finish-load', () => {
-      const run = process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1'
-        ? resumeValidationAcceptance(mainWindow)
+      const run = process.env.ELECTRON_ACCEPTANCE_BASIC_VALIDATE === '1'
+        ? resumeBasicAdminValidation(mainWindow)
+        : process.env.ELECTRON_ACCEPTANCE_BASIC_ADMIN === '1'
+          ? runBasicAdminFullAcceptance(mainWindow)
+        : process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1'
+          ? resumeValidationAcceptance(mainWindow)
         : process.env.ELECTRON_ACCEPTANCE_GENERATE === '1'
           ? resumeGenerationAcceptance(mainWindow)
         : process.env.ELECTRON_ACCEPTANCE_RESUME === '1'

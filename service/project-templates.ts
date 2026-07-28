@@ -33,3 +33,42 @@ export default function RealtimeMonitor(){const ref=useRef<HTMLDivElement>(null)
     file('tests/project.test.mjs', `import assert from 'node:assert/strict';import test from 'node:test';test('project baseline',()=>{assert.equal(new Set(['home','drones','monitor','missions','media','alerts','analytics','rbac','settings']).size,9)});`),
   ];
 }
+
+export function createBasicAdminTemplate(): FileChangeItem[] {
+  return [
+    file('package.json', JSON.stringify({ name: 'xx-admin', version: '1.0.0', private: true, type: 'module', scripts: { dev: 'vite', server: 'node server/index.mjs', build: 'tsc --noEmit && vite build', lint: 'tsc --noEmit', test: 'node --test tests/project.test.mjs' }, dependencies: { '@ant-design/icons': '^5.6.1', antd: '^5.24.9', react: '^18.3.1', 'react-dom': '^18.3.1' }, devDependencies: { '@types/react': '^18.3.20', '@types/react-dom': '^18.3.6', '@vitejs/plugin-react': '^4.3.4', typescript: '^5.7.3', vite: '^6.2.2' } }, null, 2)),
+    file('tsconfig.json', JSON.stringify({ compilerOptions: { target: 'ES2022', lib: ['ES2022', 'DOM', 'DOM.Iterable'], module: 'ESNext', skipLibCheck: true, moduleResolution: 'Bundler', isolatedModules: true, noEmit: true, jsx: 'react-jsx', strict: true }, include: ['src', 'vite.config.ts'] }, null, 2)),
+    file('vite.config.ts', `import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+export default defineConfig({ plugins: [react()], server: { host: '127.0.0.1', port: 4280, proxy: { '/api': 'http://127.0.0.1:4910' } } });`),
+    file('index.html', `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>XX后台管理</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`),
+    file('src/main.tsx', `import ReactDOM from 'react-dom/client';
+import 'antd/dist/reset.css';
+import App from './App';
+import './style.css';
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />);`),
+    file('src/api/auth.ts', `export type LoginResult = { token: string; user: { name: string; role: string } };
+export async function login(username: string, password: string) {
+  const response = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
+  if (!response.ok) throw new Error('账号或密码错误');
+  return response.json() as Promise<LoginResult>;
+}`),
+    file('src/pages/LoginPage.tsx', `import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, Typography, message } from 'antd';
+import { login } from '../api/auth';
+type Props = { onSuccess: (name: string) => void };
+export default function LoginPage({ onSuccess }: Props) { const [form] = Form.useForm(); const submit = async (values: { username: string; password: string }) => { try { const result = await login(values.username, values.password); onSuccess(result.user.name); message.success('登录成功'); } catch (error) { message.error((error as Error).message); } }; return <main className="login-page"><Card className="login-card"><Typography.Title level={2}>XX后台管理</Typography.Title><Typography.Paragraph type="secondary">请输入管理账号登录系统</Typography.Paragraph><Form form={form} layout="vertical" initialValues={{ username: 'admin', password: '123456' }} onFinish={submit}><Form.Item name="username" label="账号" rules={[{ required: true }]}><Input prefix={<UserOutlined />} /></Form.Item><Form.Item name="password" label="密码" rules={[{ required: true }]}><Input.Password prefix={<LockOutlined />} /></Form.Item><Button type="primary" htmlType="submit" block>登录</Button></Form></Card></main>; }`),
+    file('src/pages/HomePage.tsx', `import { DashboardOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Layout, Menu, Row, Statistic, Typography } from 'antd';
+type Props = { username: string; onLogout: () => void };
+export default function HomePage({ username, onLogout }: Props) { return <Layout className="app-layout"><Layout.Sider><div className="brand">XX ADMIN</div><Menu theme="dark" selectedKeys={['home']} items={[{ key: 'home', icon: <DashboardOutlined />, label: '首页' }]} /></Layout.Sider><Layout><Layout.Header className="header"><Typography.Text strong>欢迎，{username}</Typography.Text><Button icon={<LogoutOutlined />} onClick={onLogout}>退出</Button></Layout.Header><Layout.Content className="content"><Typography.Title level={3}>首页</Typography.Title><Row gutter={16}><Col span={8}><Card><Statistic title="今日访问" value={1280} /></Card></Col><Col span={8}><Card><Statistic title="在线用户" value={86} /></Card></Col><Col span={8}><Card><Statistic title="待处理事项" value={12} /></Card></Col></Row></Layout.Content></Layout></Layout>; }`),
+    file('src/App.tsx', `import { useState } from 'react';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+export default function App() { const [username, setUsername] = useState(''); return username ? <HomePage username={username} onLogout={() => setUsername('')} /> : <LoginPage onSuccess={setUsername} />; }`),
+    file('src/style.css', `html,body,#root{height:100%;margin:0}body{font-family:"Microsoft YaHei",sans-serif}.login-page{height:100%;display:grid;place-items:center;background:#eef2f6}.login-card{width:380px}.app-layout{min-height:100%}.brand{height:64px;display:grid;place-items:center;color:#fff;font-weight:700}.header{display:flex;align-items:center;justify-content:space-between;background:#fff}.content{padding:24px;background:#eef2f6}`),
+    file('server/index.mjs', `import http from 'node:http';
+const server=http.createServer((request,response)=>{response.setHeader('Content-Type','application/json; charset=utf-8');if(request.method==='POST'&&request.url==='/api/login'){let body='';request.on('data',chunk=>body+=chunk);request.on('end',()=>{const data=JSON.parse(body||'{}');if(data.username==='admin'&&data.password==='123456'){response.end(JSON.stringify({token:'local-admin-token',user:{name:'管理员',role:'admin'}}));return}response.statusCode=401;response.end(JSON.stringify({message:'账号或密码错误'}))});return}response.end(JSON.stringify({ok:true,path:request.url}))});server.listen(4910,'127.0.0.1',()=>console.log('API http://127.0.0.1:4910'));`),
+    file('tests/project.test.mjs', `import assert from 'node:assert/strict';import { readFile } from 'node:fs/promises';import test from 'node:test';test('login and home baseline',async()=>{const app=await readFile(new URL('../src/App.tsx',import.meta.url),'utf8');const server=await readFile(new URL('../server/index.mjs',import.meta.url),'utf8');assert.match(app,/LoginPage/);assert.match(app,/HomePage/);assert.ok(server.includes('/api/login'))});`),
+  ];
+}

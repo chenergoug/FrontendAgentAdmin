@@ -1,6 +1,6 @@
 import type { OllamaModelTag, OllamaStatus } from './types.js';
 
-export const defaultOllamaBaseUrl = 'http://127.0.0.1:11434';
+export const defaultOllamaBaseUrl = process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434';
 
 type OllamaTagsResponse = {
   models?: {

@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const port = Number(process.env.PORT ?? 3880);
+export const host = process.env.SERVICE_HOST ?? '127.0.0.1';
 
 export const defaultDataDir =
   process.env.FRONTEND_AGENT_DATA_DIR ?? path.join(os.homedir(), 'FrontendAgentAdminData');

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 5180",
+    "dev": "vite",
     "dev:service": "tsx service/index.ts",
     "dev:electron": "tsc -p electron/tsconfig.json && electron dist-electron/main.js",
     "build": "tsc -p tsconfig.json && vite build && tsc -p electron/tsconfig.json && tsc -p service/tsconfig.json"

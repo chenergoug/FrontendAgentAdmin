@@ -2,3 +2,10 @@ dist/
 dist-electron/
 dist-service/
 node_modules/
+.env
+*.log
+.acceptance-logs/
+.runtime-logs/
+.file-validation*/
+.validation-*/
+.workflow-validation/

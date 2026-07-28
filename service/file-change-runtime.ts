@@ -6,7 +6,7 @@ import { startAgentRun } from './agent-runtime.js';
 import { readProjectFileTree } from './project-files.js';
 import { dataPath, readJson, writeJsonAtomic } from './storage.js';
 import type { FileChangeAction, FileChangeItem, FileChangeSet, ProjectFileNode, ProjectRecord } from './types.js';
-import { createDroneReactTemplate } from './project-templates.js';
+import { createBasicAdminTemplate, createDroneReactTemplate } from './project-templates.js';
 
 const blockedPaths = new Set(['.env', '.env.local', '.git/config', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
 const maxFiles = 100;
@@ -69,6 +69,10 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
   if (agentId === 'a-frontend' && !projectHasFiles && /无人机|WebGL|Three\.js/i.test(task)) {
     const files = createDroneReactTemplate();
     return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-react-drone', summary: 'React + Ant Design + Three.js 无人机项目基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+  }
+  if (agentId === 'a-frontend' && !projectHasFiles && /后台管理/i.test(task) && /登录/i.test(task) && /首页/i.test(task) && /Node/i.test(task)) {
+    const files = createBasicAdminTemplate();
+    return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-basic-admin', summary: 'React + Ant Design + Node 后台管理基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
   }
   const instruction = [
     task,

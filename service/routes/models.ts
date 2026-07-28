@@ -4,7 +4,7 @@ import { storagePaths } from '../config.js';
 import { includes, listResponse, parseBody, send } from '../http-utils.js';
 import { exportPayload, findNameConflict, mergeById, normalizeModelsImport, selectExportItems, validateImportUniqueNames } from '../import-export.js';
 import { checkModelHealth } from '../model-health.js';
-import { getOllamaStatus } from '../ollama-client.js';
+import { defaultOllamaBaseUrl, getOllamaStatus } from '../ollama-client.js';
 import { seedModels } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
 import type { ModelRecord } from '../types.js';
@@ -27,7 +27,7 @@ export async function handleModelsRoute(
   const models = await readJson<ModelRecord[]>(storagePaths.models, seedModels);
 
   if (request.method === 'POST' && id === 'ollama-default') {
-    const status = await getOllamaStatus('http://127.0.0.1:11434');
+    const status = await getOllamaStatus(defaultOllamaBaseUrl);
     const modelId = status.models.some((item) => item.name === 'qwen2.5-coder:7b') ? 'qwen2.5-coder:7b' : status.models[0]?.name ?? 'qwen2.5-coder:7b';
     const modelName = '本地 Qwen Coder 7B';
     const existing = models.find((item) => item.name === modelName || item.modelId === modelId);
@@ -36,7 +36,7 @@ export async function handleModelsRoute(
       name: existing?.name ?? modelName,
       type: '本地离线模型',
       provider: 'Ollama',
-      baseUrl: 'http://127.0.0.1:11434',
+      baseUrl: defaultOllamaBaseUrl,
       modelId,
       contextWindow: 32768,
       maxOutput: 4096,
