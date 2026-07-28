@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { nowText, storagePaths } from './config.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from './storage.js';
+import { stripAnsi } from './text-utils.js';
 import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType } from './types.js';
 
 type RunningTask = {
@@ -33,7 +34,7 @@ async function hydrateTaskState() {
     readJson<ProjectTaskLog[]>(storagePaths.projectTaskLogs, []),
   ]);
   history.push(...savedTasks.map((item) => item.status === 'running' ? { ...item, status: 'failed' as const, endedAt: nowText() } : item));
-  savedLogs.forEach((log) => logsByTask.set(log.taskId, [...(logsByTask.get(log.taskId) ?? []), log]));
+  savedLogs.forEach((log) => logsByTask.set(log.taskId, [...(logsByTask.get(log.taskId) ?? []), { ...log, text: stripAnsi(log.text) }]));
 }
 
 await hydrateTaskState();
@@ -43,7 +44,7 @@ function appendTaskLog(task: RunningTask, stream: ProjectTaskLog['stream'], text
     id: `tl-${randomUUID()}`,
     taskId: task.record.id,
     stream,
-    text,
+    text: stripAnsi(text),
     createdAt: nowText(),
   };
   task.logs.push(log);
@@ -89,7 +90,7 @@ export async function listProjectTasks(projectId: string) {
 
 export async function readTaskLogs(taskId: string) {
   await hydrateTaskState();
-  return logsByTask.get(taskId) ?? [];
+  return (logsByTask.get(taskId) ?? []).map((log) => ({ ...log, text: stripAnsi(log.text) }));
 }
 
 export function startProjectTask(project: ProjectRecord, type: ProjectTaskType, command?: string) {

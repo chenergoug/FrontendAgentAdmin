@@ -1,5 +1,5 @@
 import { BugOutlined } from '@ant-design/icons'
-import { Card, Layout, Menu, Result, Spin, Tag, message } from 'antd'
+import { Badge, Card, Layout, Menu, Result, Spin, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { ollamaApi, projectApi } from '../src/api'
 import type { OllamaStatus, ProjectRecord } from '../src/types'
@@ -142,6 +142,14 @@ export function ChildApp() {
   return (
     <Layout className="child-layout">
       <Layout.Sider className="child-sider" width={220}>
+        <div className="child-runtime-status">
+          {hasProject && (
+            <span className="child-runtime-content">
+              <span>{clientRuntime.text}</span>
+              <Badge color={clientRuntime.color} />
+            </span>
+          )}
+        </div>
         <Menu
           items={menuItems.map((item) => ({
             key: item.key,
@@ -158,9 +166,6 @@ export function ChildApp() {
           selectedKeys={[activeMenu]}
           theme="dark"
         />
-        <div className="child-runtime-status">
-          {hasProject && <Tag color={clientRuntime.color}>{clientRuntime.text}</Tag>}
-        </div>
       </Layout.Sider>
 
       <Layout className="child-main">

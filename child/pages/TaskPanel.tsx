@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { fileChangeApi, projectApi } from '../../src/api';
 import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType, ProjectValidationRecord } from '../../src/types';
 import { formatDateTimeToSecond } from '../../src/utils/time';
+import { stripAnsi } from '../../src/utils/text';
 import type { TaskPanelMode } from '../types';
 
 const taskStatusColor: Record<ProjectTaskStatus, string> = {
@@ -173,7 +174,7 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
       <Card title="任务日志">
         {logs.length > 0 ? (
           <pre className="task-log-view">
-            {logs.map((log) => `[${formatDateTimeToSecond(log.createdAt)}] ${log.stream}: ${log.text}`).join('')}
+            {logs.map((log) => `[${formatDateTimeToSecond(log.createdAt)}] ${log.stream}: ${stripAnsi(log.text)}`).join('')}
           </pre>
         ) : (
           <Empty description="暂无任务日志" />
