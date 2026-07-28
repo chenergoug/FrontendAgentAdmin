@@ -1,5 +1,5 @@
 import './env.js';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -95,6 +95,16 @@ function createMainWindow() {
   void loadMainPage(window);
   return window;
 }
+
+ipcMain.handle('native-dialog:select-directory', async (event) => {
+  const owner = BrowserWindow.fromWebContents(event.sender);
+  const options: Electron.OpenDialogOptions = {
+    title: '选择项目文件夹',
+    properties: ['openDirectory', 'createDirectory'],
+  };
+  const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+  return result.canceled ? null : result.filePaths[0] ?? null;
+});
 
 async function markProjectClientClosed(projectId: string) {
   try {

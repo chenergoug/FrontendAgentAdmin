@@ -5,6 +5,7 @@ import type { Key } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { projectApi } from '../api';
 import { TableToolbar } from '../components/TableToolbar';
+import { PathPickerInput } from '../components/PathPickerInput';
 import type { PageResult, ProjectDeviceType, ProjectRecord, ProjectShape, ProjectStatus } from '../types';
 import { downloadJson, exportSelectionFilename, readJsonFile, showImportError } from '../utils/transfer';
 import {
@@ -424,7 +425,9 @@ export function ProjectPage() {
             <Form.Item name="shape" label="项目形态" rules={[{ required: true }]}><Select options={shapeSelectOptions} /></Form.Item>
             <Form.Item name="deviceType" label="项目类型" rules={[{ required: true }]}><Select options={deviceSelectOptions} /></Form.Item>
             <Form.Item name="businessType" label="业务类型"><Input /></Form.Item>
-            <Form.Item name="rootPath" label="项目路径" rules={[{ required: true, message: '请输入项目路径' }]}><Input placeholder="选择文件夹或创建新文件夹" /></Form.Item>
+            <Form.Item name="rootPath" label="项目路径" rules={[{ required: true, message: '请选择或输入项目路径' }]}>
+              <PathPickerInput placeholder="请选择或输入具体项目文件夹" />
+            </Form.Item>
             <Form.Item name="gitRemote" label="Git 地址"><Input /></Form.Item>
             <Form.Item name="branch" label="默认分支"><Input /></Form.Item>
             <Form.Item name="serverUrl" label="服务器地址"><Input /></Form.Item>

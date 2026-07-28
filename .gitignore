@@ -10,3 +10,4 @@ node_modules/
 .validation-*/
 .workflow-validation/
 release/
+config/imports/codex-gpt-5.5-model.json
