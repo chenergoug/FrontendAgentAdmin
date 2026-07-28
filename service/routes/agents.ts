@@ -3,12 +3,19 @@ import type http from 'node:http';
 import { storagePaths } from '../config.js';
 import { includes, listResponse, parseBody, send } from '../http-utils.js';
 import { exportPayload, findNameConflict, mergeById, normalizeAgentsImport, selectExportItems, validateImportUniqueNames } from '../import-export.js';
+import { ensureDefaultAgents } from '../agent-runtime.js';
 import { seedAgents } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeAgentFiles, writeJsonAtomic } from '../storage.js';
 import type { AgentRecord } from '../types.js';
 
 export async function handleAgentsRoute(request: http.IncomingMessage, response: http.ServerResponse, url: URL, id?: string) {
   const agents = await readJson<AgentRecord[]>(storagePaths.agents, seedAgents);
+
+  if (request.method === 'POST' && id === 'defaults') {
+    const body = await parseBody<{ modelName?: string }>(request);
+    send(response, 200, await ensureDefaultAgents(body.modelName ?? '本地 Qwen Coder 7B'));
+    return true;
+  }
 
   if (request.method === 'GET' && id === 'export') {
     const selected = selectExportItems(agents, url);

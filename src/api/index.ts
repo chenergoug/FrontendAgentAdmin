@@ -1,8 +1,12 @@
 export { agentApi } from './agents';
+export { agentRunApi } from './agentRuns';
 export { dashboardApi } from './dashboard';
+export { fileChangeApi } from './fileChanges';
 export { logApi } from './logs';
 export { modelApi } from './models';
+export { ollamaApi } from './ollama';
 export { projectApi } from './projects';
 export { recoveryApi } from './recovery';
 export { settingApi } from './settings';
+export { workflowApi } from './workflows';
 export { request, type QueryValue } from './request';

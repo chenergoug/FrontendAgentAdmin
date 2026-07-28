@@ -54,6 +54,95 @@ export type AgentRecord = {
   approvalRules: string[];
 };
 
+export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'stopped';
+
+export type AgentRunRecord = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  agentId: string;
+  agentName: string;
+  modelName: string;
+  modelId: string;
+  status: AgentRunStatus;
+  input: string;
+  output: string;
+  error: string;
+  startedAt: string;
+  endedAt: string;
+};
+
+export type AgentRunLog = {
+  id: string;
+  runId: string;
+  level: LogRecord['level'];
+  text: string;
+  createdAt: string;
+};
+
+export type WorkflowStageKey = 'requirements' | 'architecture' | 'planning' | 'frontend' | 'backend' | 'review' | 'debug' | 'test' | 'docs';
+export type WorkflowStageStatus = 'pending' | 'running' | 'review' | 'approved' | 'failed';
+
+export type WorkflowStageRecord = {
+  key: WorkflowStageKey;
+  title: string;
+  agentId: string;
+  status: WorkflowStageStatus;
+  input: string;
+  output: string;
+  runId: string;
+  error: string;
+  requiresApproval: boolean;
+  updatedAt: string;
+  confirmedAt: string;
+};
+
+export type WorkflowSnapshot = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  activeStage: WorkflowStageKey;
+  autoMode: boolean;
+  autoApproveSeconds: number;
+  stages: WorkflowStageRecord[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WorkflowCapability = { stageKey: WorkflowStageKey; agentId: string; available: boolean; reasons: string[] };
+export type WorkflowCapabilityReport = { projectId: string; ready: boolean; projectPathAvailable: boolean; stages: WorkflowCapability[] };
+
+export type FileChangeAction = 'create' | 'update' | 'delete';
+export type FileChangeSetStatus = 'pending' | 'applied' | 'rejected' | 'failed';
+export type FileChangeItem = { path: string; action: FileChangeAction; content: string; originalContent: string; selected: boolean };
+export type FileChangeSet = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  agentRunId: string;
+  summary: string;
+  status: FileChangeSetStatus;
+  files: FileChangeItem[];
+  error: string;
+  createdAt: string;
+  appliedAt: string;
+};
+
+export type OllamaModelTag = {
+  name: string;
+  model: string;
+  modifiedAt: string;
+  size: number;
+};
+
+export type OllamaStatus = {
+  installed: boolean;
+  running: boolean;
+  version: string;
+  baseUrl: string;
+  models: OllamaModelTag[];
+};
+
 export type SettingRecord = {
   id: string;
   group: string;
@@ -152,4 +241,16 @@ export type ProjectTaskLog = {
   stream: 'stdout' | 'stderr' | 'system';
   text: string;
   createdAt: string;
+};
+
+export type ProjectValidationRecord = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  status: 'running' | 'success' | 'failed';
+  currentStep: ProjectTaskType | '';
+  taskIds: string[];
+  report: string;
+  startedAt: string;
+  endedAt: string;
 };

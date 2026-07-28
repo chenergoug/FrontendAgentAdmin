@@ -1,190 +1,56 @@
 import type { AgentRecord, LogRecord, ModelRecord, ProjectRecord, RecoveryRecord, SettingRecord } from './types.js';
 
-export const seedProjects: ProjectRecord[] = [
-  {
-    id: 'p-drone',
-    name: '无人机后台管理',
-    source: '新建',
-    shape: '全栈 Monorepo',
-    deviceType: 'PC端',
-    businessType: '后台管理 / GIS 地图 / 视频监控',
-    rootPath: 'D:\\ErGou\\Projects\\drone-admin',
-    gitRemote: 'https://git.example.com/drone/drone-admin.git',
-    branch: 'develop',
-    serverUrl: 'https://test-drone-admin.example.com',
-    devCommand: 'pnpm dev',
-    buildCommand: 'pnpm build',
-    lintCommand: 'pnpm lint',
-    testCommand: 'pnpm test',
-    configVersion: 1,
-    status: 'ready',
-    updatedAt: '2026-07-28 21:30:00',
-    description: '无人机设备、飞行任务、实时监控、媒体资源、告警、报表和权限管理后台。',
-    requirement: '登录注册、无人机管理、实时监控、飞行任务、媒体资源、告警中心、数据分析、RBAC、系统配置。',
-  },
-  {
-    id: 'p-screen',
-    name: '园区数据大屏',
-    source: '导入',
-    shape: '纯前端',
-    deviceType: 'PC端',
-    businessType: '数据大屏 / 3D 可视化',
-    rootPath: 'D:\\ErGou\\Projects\\ops-screen',
-    gitRemote: 'https://git.example.com/visual/ops-screen.git',
-    branch: 'main',
-    serverUrl: 'https://screen.example.com',
-    devCommand: 'npm run dev',
-    buildCommand: 'npm run build',
-    lintCommand: 'npm run lint',
-    testCommand: '',
-    configVersion: 3,
-    status: 'running',
-    updatedAt: '2026-07-28 20:10:00',
-    description: '园区运行态势、能耗、设备告警和三维可视化大屏。',
-    requirement: '维护大屏页面、图表组件和 Three.js 场景。',
-  },
-  {
-    id: 'p-mini',
-    name: '巡检小程序',
-    source: '导入',
-    shape: '纯前端',
-    deviceType: '小程序',
-    businessType: '移动巡检 / 工单',
-    rootPath: 'D:\\ErGou\\Projects\\inspection-mini',
-    gitRemote: 'https://git.example.com/mobile/inspection-mini.git',
-    branch: 'release',
-    serverUrl: 'https://inspection-api.example.com',
-    devCommand: 'pnpm dev:mp-weixin',
-    buildCommand: 'pnpm build:mp-weixin',
-    lintCommand: 'pnpm lint',
-    testCommand: '',
-    configVersion: 2,
-    status: 'locked',
-    updatedAt: '2026-07-27 18:22:00',
-    description: '移动端巡检、拍照上传、定位和任务流转。',
-    requirement: '导入已有 uniapp 小程序并继续维护。',
-  },
-];
-
-export const seedModels: ModelRecord[] = [
-  {
-    id: 'm-online',
-    name: '线上代码模型',
-    type: '线上模型',
-    provider: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    modelId: 'gpt-code',
-    contextWindow: 128000,
-    maxOutput: 8192,
-    timeout: 120,
-    enabled: true,
-    healthy: true,
-    checkedAt: '2026-07-28 21:20',
-  },
-  {
-    id: 'm-local',
-    name: '本地 Qwen Coder 14B',
-    type: '本地离线模型',
-    provider: 'Ollama',
-    baseUrl: 'http://127.0.0.1:11434',
-    modelId: 'qwen2.5-coder:14b',
-    contextWindow: 32768,
-    maxOutput: 4096,
-    timeout: 180,
-    enabled: true,
-    healthy: false,
-    checkedAt: '2026-07-28 20:12',
-  },
-];
-
-export const seedAgents: AgentRecord[] = [
-  {
-    id: 'a-router',
-    name: '主调度 Agent',
-    category: '主调度',
-    modelName: '线上代码模型',
-    risk: '低',
-    enabled: true,
-    description: '拆分任务、选择专项 Agent、控制工作流状态。',
-    prompt: '你是前端开发平台主调度 Agent，只输出调度计划和下一步动作。',
-    permissions: ['读取项目配置', '读取任务快照', '生成调度计划'],
-    approvalRules: ['新增高风险专项 Agent 调用需要确认'],
-  },
-  {
-    id: 'a-plan',
-    name: '实现规划 Agent',
-    category: '实现规划',
-    modelName: '本地 Qwen Coder 14B',
-    risk: '低',
-    enabled: true,
-    description: '生成文件拆分、组件职责、生成顺序和单文件行数限制。',
-    prompt: '你是实现规划 Agent，不直接写代码，只输出文件规划、接口契约和拆分策略。',
-    permissions: ['读取项目画像', '读取相关文件摘要'],
-    approvalRules: ['实现规划确认后才能生成代码'],
-  },
-  {
-    id: 'a-front',
-    name: '前端开发 Agent',
-    category: '前端开发',
-    modelName: '线上代码模型',
-    risk: '中',
-    enabled: true,
-    description: '按实现规划生成前端 Diff。',
-    prompt: '你是资深前端开发工程师，所有修改必须输出 Diff，并保持项目现有风格。',
-    permissions: ['读取文件', '生成 Diff', '用户确认后写文件'],
-    approvalRules: ['应用 Diff 需要确认', '安装依赖需要确认'],
-  },
-  {
-    id: 'a-back',
-    name: '后端开发 Agent',
-    category: '后端开发',
-    modelName: '线上代码模型',
-    risk: '中',
-    enabled: true,
-    description: '负责 Node 接口、数据结构、RBAC、WebSocket 和文件上传。',
-    prompt: '你是后端开发 Agent，数据结构变更、env 修改和高风险命令必须等待用户确认。',
-    permissions: ['读取文件', '生成 Diff', '读取终端日志'],
-    approvalRules: ['数据结构变更需要确认', '修改 env 需要确认'],
-  },
-];
+export const seedProjects: ProjectRecord[] = [];
+export const seedModels: ModelRecord[] = [];
+export const seedAgents: AgentRecord[] = [];
+export const seedRecovery: RecoveryRecord[] = [];
+export const seedModelUsage: { day: string; count: number }[] = [];
+export const seedAgentUsage: { agent: string; count: number }[] = [];
+export const seedLogs: LogRecord[] = [];
 
 export function createSeedSettings(dataDir: string): SettingRecord[] {
   return [
-    { id: 's1', group: '数据目录', name: '默认数据目录', value: dataDir, description: '保存系统配置、项目配置、Agent 配置和本地日志。' },
-    { id: 's2', group: '子客户端限制', name: '单项目子客户端数量', value: '1', description: '同一个项目同一时间只能打开一个子客户端。' },
-    { id: 's3', group: '代码写入策略', name: '写入前生成 Diff', value: '开启', description: '所有代码修改必须先生成 Diff。' },
-    { id: 's4', group: '命令执行策略', name: '安装依赖审批', value: '开启', description: '安装依赖必须用户确认。' },
-    { id: 's5', group: '上下文策略', name: '上下文预算', value: '24000 tokens', description: '离线模型调用前按预算裁剪上下文。' },
-    { id: 's6', group: '日志与快照', name: '日志保留', value: '30 天', description: '过期日志由恢复中心清理。' },
+    {
+      id: 's1',
+      group: '数据目录',
+      name: '默认数据目录',
+      value: dataDir,
+      description: '保存系统配置、项目配置、Agent 配置和本地日志。',
+    },
+    {
+      id: 's2',
+      group: '子客户端限制',
+      name: '单项目子客户端数量',
+      value: '1',
+      description: '同一个项目同一时间只能打开一个子客户端。',
+    },
+    {
+      id: 's3',
+      group: '代码写入策略',
+      name: '写入前生成 Diff',
+      value: '开启',
+      description: '所有代码修改必须先生成 Diff。',
+    },
+    {
+      id: 's4',
+      group: '命令执行策略',
+      name: '安装依赖审批',
+      value: '开启',
+      description: '安装依赖必须用户确认。',
+    },
+    {
+      id: 's5',
+      group: '上下文策略',
+      name: '上下文预算',
+      value: '24000 tokens',
+      description: '离线模型调用前按预算裁剪上下文。',
+    },
+    {
+      id: 's6',
+      group: '日志与快照',
+      name: '日志保留',
+      value: '30 天',
+      description: '过期日志由恢复中心清理。',
+    },
   ];
 }
-
-export const seedRecovery: RecoveryRecord[] = [
-  { id: 'r1', type: '异常 Session', projectName: '园区数据大屏', title: '子客户端心跳异常', detail: '最后一次心跳超过 20 秒。', severity: '中', status: '待处理', createdAt: '2026-07-28 20:20' },
-  { id: 'r2', type: '日志清理', projectName: '全局', title: '模型调用日志接近上限', detail: '可清理 30 天以前的模型调用摘要。', severity: '低', status: '待处理', createdAt: '2026-07-28 18:05' },
-];
-
-export const seedModelUsage = [
-  { day: '周一', count: 32 },
-  { day: '周二', count: 46 },
-  { day: '周三', count: 41 },
-  { day: '周四', count: 58 },
-  { day: '周五', count: 66 },
-  { day: '周六', count: 39 },
-  { day: '周日', count: 51 },
-];
-
-export const seedAgentUsage = [
-  { agent: '主调度', count: 18 },
-  { agent: '需求分析', count: 9 },
-  { agent: '实现规划', count: 12 },
-  { agent: '前端开发', count: 21 },
-  { agent: '后端开发', count: 8 },
-  { agent: '代码审核', count: 15 },
-];
-
-export const seedLogs: LogRecord[] = [
-  { id: 'l1', type: '项目日志', level: 'info', projectName: '无人机后台管理', title: '项目配置已保存', detail: '配置版本 v1 已生成。', createdAt: '2026-07-28 21:30' },
-  { id: 'l2', type: '模型调用', level: 'warning', projectName: '全局', title: '本地模型检查失败', detail: '未检测到 qwen2.5-coder:14b。', createdAt: '2026-07-28 20:12' },
-  { id: 'l3', type: '系统日志', level: 'info', projectName: '全局', title: '单项目子客户端限制启用', detail: '每个项目最多一个子客户端。', createdAt: '2026-07-28 19:58' },
-];

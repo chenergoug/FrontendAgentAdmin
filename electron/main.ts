@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appendFileSync } from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.RENDERER_URL ?? 'http://127.0.0.1:5180';
@@ -52,7 +53,9 @@ async function fetchProjectName(projectId: string) {
 
 function createMainWindow() {
   const window = new BrowserWindow(createWindowOptions('Frontend Agent Admin'));
+  window.maximize();
   void loadMainPage(window);
+  return window;
 }
 
 async function markProjectClientClosed(projectId: string) {
@@ -124,7 +127,25 @@ ipcMain.handle('project-client:close', async (_event, projectId: string) => {
   return { closed: false, reason: 'Project client is not opened in this Electron process.' };
 });
 
-app.whenReady().then(createMainWindow);
+app.whenReady().then(async () => {
+  const mainWindow = createMainWindow();
+  if (process.env.ELECTRON_ACCEPTANCE === '1' || process.env.ELECTRON_ACCEPTANCE_RESUME === '1' || process.env.ELECTRON_ACCEPTANCE_GENERATE === '1' || process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1') {
+    const { resumeGenerationAcceptance, resumePendingAcceptance, resumeValidationAcceptance, runMainAcceptance } = await import('./acceptance-driver.js');
+    mainWindow.webContents.once('did-finish-load', () => {
+      const run = process.env.ELECTRON_ACCEPTANCE_VALIDATE === '1'
+        ? resumeValidationAcceptance(mainWindow)
+        : process.env.ELECTRON_ACCEPTANCE_GENERATE === '1'
+          ? resumeGenerationAcceptance(mainWindow)
+        : process.env.ELECTRON_ACCEPTANCE_RESUME === '1'
+          ? resumePendingAcceptance(mainWindow)
+          : runMainAcceptance(mainWindow);
+      void run.catch((error) => {
+        console.error('Electron acceptance failed:', error);
+        appendFileSync(path.join(app.getPath('userData'), 'electron-acceptance.log'), `${new Date().toISOString()} ${error instanceof Error ? error.stack : String(error)}\n`);
+      });
+    });
+  }
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -182,9 +182,20 @@ export function ProjectPage() {
 
   const saveProject = async () => {
     const values = await form.validateFields();
+    const reservedChildWindow = modalMode === 'create' && !window.frontendAgent
+      ? window.open('about:blank', 'frontend-agent-child-pending')
+      : null;
+    if (modalMode === 'create' && !window.frontendAgent && !reservedChildWindow) {
+      message.error('浏览器阻止了新页面打开，请允许弹窗后重试');
+      return;
+    }
     try {
       if (modalMode === 'create') {
-        await projectApi.create(values);
+        const created = await projectApi.create(values);
+        closeModal();
+        await openProjectClient(created.id, reservedChildWindow);
+        loadData();
+        return;
       } else {
         await projectApi.update(currentProject.id, values);
       }
@@ -192,6 +203,7 @@ export function ProjectPage() {
       closeModal();
       loadData();
     } catch (error) {
+      reservedChildWindow?.close();
       message.error((error as Error).message);
     }
   };
@@ -214,7 +226,7 @@ export function ProjectPage() {
     }
   };
 
-  const openProjectClient = (projectId: string) =>
+  const openProjectClient = (projectId: string, reservedChildWindow?: Window | null) =>
     runAction(async () => {
       if (window.frontendAgent?.openProjectClient) {
         await projectApi.openClient(projectId);
@@ -227,7 +239,7 @@ export function ProjectPage() {
         return;
       }
 
-      const childWindow = window.open('about:blank', `frontend-agent-child-${projectId}`);
+      const childWindow = reservedChildWindow ?? window.open('about:blank', `frontend-agent-child-${projectId}`);
       if (!childWindow) {
         throw new Error('浏览器阻止了新页面打开，请允许弹窗后重试');
       }

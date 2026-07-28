@@ -4,6 +4,7 @@ import {
   HistoryOutlined,
   PlayCircleOutlined,
   RobotOutlined,
+  SolutionOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
@@ -32,6 +33,7 @@ export const statusColor: Record<ProjectStatus, string> = {
 export const menuItems: { key: ChildMenuKey; label: string; icon: ReactNode }[] = [
   { key: 'workspace', label: '开发工作区', icon: <CodeOutlined /> },
   { key: 'tasks', label: 'Agent 任务', icon: <RobotOutlined /> },
+  { key: 'workflow', label: '开发流程', icon: <SolutionOutlined /> },
   { key: 'changes', label: '文件变更', icon: <FileSearchOutlined /> },
   { key: 'runtime', label: '运行调试', icon: <PlayCircleOutlined /> },
   { key: 'build', label: '构建测试', icon: <ToolOutlined /> },

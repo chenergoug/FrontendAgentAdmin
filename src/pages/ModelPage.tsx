@@ -3,9 +3,9 @@ import { Button, Card, Descriptions, Flex, Form, Input, InputNumber, Modal, Popc
 import type { ColumnsType } from 'antd/es/table';
 import type { Key } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { modelApi } from '../api';
+import { modelApi, ollamaApi } from '../api';
 import { TableToolbar } from '../components/TableToolbar';
-import type { ModelRecord, PageResult } from '../types';
+import type { ModelRecord, OllamaModelTag, PageResult } from '../types';
 import { downloadJson, exportSelectionFilename, readJsonFile, showImportError } from '../utils/transfer';
 import {
   tableCardBodyStyle,
@@ -52,6 +52,8 @@ export function ModelPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PageResult<ModelRecord>>({ list: [], total: 0, page: 1, pageSize: 10 });
+  const [ollamaModels, setOllamaModels] = useState<OllamaModelTag[]>([]);
+  const provider = Form.useWatch('provider', form);
   const { tableWrapperRef, scrollY } = useTableScrollY([data.list.length, loading, page, pageSize]);
 
   const loadData = useCallback(() => {
@@ -66,6 +68,10 @@ export function ModelPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    ollamaApi.status().then((status) => setOllamaModels(status.models)).catch(() => setOllamaModels([]));
+  }, []);
 
   const open = (mode: ModalMode, model = createModel()) => {
     setCurrent(model);
@@ -173,6 +179,7 @@ export function ModelPage() {
           <Button icon={<ImportOutlined />}>导入模型</Button>
         </Upload>
         <Button icon={<ExportOutlined />} onClick={exportModels}>导出模型</Button>
+        <Button onClick={() => runAction(() => modelApi.syncOllamaDefault(), 'Ollama 默认模型已同步')}>同步 Ollama 默认模型</Button>
         <Button onClick={() => Promise.all(data.list.map((item) => modelApi.check(item.id))).then(() => { message.success('当前页模型检查完成'); loadData(); }).catch((error: Error) => message.error(error.message))}>当前页健康检查</Button>
       </Space>
       <div ref={tableWrapperRef} style={tableCardStyle}>
@@ -213,7 +220,9 @@ export function ModelPage() {
             <Form.Item name="type" label="模型类型"><Select options={modelTypes.map((item) => ({ label: item, value: item }))} /></Form.Item>
             <Form.Item name="provider" label="服务商"><Select options={['OpenAI', 'DeepSeek', 'Qwen', 'Ollama', 'LM Studio', '自定义'].map((item) => ({ label: item, value: item }))} /></Form.Item>
             <Form.Item name="baseUrl" label="服务地址"><Input /></Form.Item>
-            <Form.Item name="modelId" label="Model ID" rules={[{ required: true }]}><Input /></Form.Item>
+            <Form.Item name="modelId" label="Model ID" rules={[{ required: true }]}>
+              {provider === 'Ollama' ? <Select showSearch placeholder="选择本机已安装模型" options={ollamaModels.map((item) => ({ label: item.name, value: item.name }))} /> : <Input />}
+            </Form.Item>
             <Form.Item name="contextWindow" label="上下文长度"><InputNumber style={{ width: '100%' }} /></Form.Item>
             <Form.Item name="maxOutput" label="最大输出长度"><InputNumber style={{ width: '100%' }} /></Form.Item>
             <Form.Item name="timeout" label="超时(s)"><InputNumber style={{ width: '100%' }} /></Form.Item>

@@ -19,9 +19,9 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { Key } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { agentApi } from '../api'
+import { agentApi, modelApi } from '../api'
 import { TableToolbar } from '../components/TableToolbar'
-import type { AgentRecord, PageResult } from '../types'
+import type { AgentRecord, ModelRecord, PageResult } from '../types'
 import { downloadJson, exportSelectionFilename, readJsonFile, showImportError } from '../utils/transfer'
 import {
   tableCardBodyStyle,
@@ -77,13 +77,13 @@ export function AgentPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<PageResult<AgentRecord>>({ list: [], total: 0, page: 1, pageSize: 10 })
+  const [models, setModels] = useState<ModelRecord[]>([])
   const { tableWrapperRef, scrollY } = useTableScrollY([data.list.length, loading, page, pageSize])
 
   const loadData = useCallback(() => {
     setLoading(true)
-    agentApi
-      .list({ page, pageSize, keyword, category })
-      .then(setData)
+    Promise.all([agentApi.list({ page, pageSize, keyword, category }), modelApi.list({ page: 1, pageSize: 100 })])
+      .then(([agentResult, modelResult]) => { setData(agentResult); setModels(modelResult.list) })
       .catch((error: Error) => message.error(error.message))
       .finally(() => setLoading(false))
   }, [category, keyword, page, pageSize])
@@ -128,6 +128,18 @@ export function AgentPage() {
     try {
       await agentApi.delete(id)
       message.success('Agent 已删除')
+      loadData()
+    } catch (error) {
+      message.error((error as Error).message)
+    }
+  }
+
+  const initDefaultAgents = async () => {
+    try {
+      const modelName = models.find((item) => item.enabled)?.name
+      if (!modelName) throw new Error('请先添加并启用一个模型')
+      const result = await agentApi.createDefaults(modelName)
+      message.success(`默认 Agent 已初始化，新增 ${result.created} 个`)
       loadData()
     } catch (error) {
       message.error((error as Error).message)
@@ -266,6 +278,7 @@ export function AgentPage() {
         <Button icon={<ExportOutlined />} onClick={exportAgents}>
           导出 Agent
         </Button>
+        <Button onClick={initDefaultAgents}>初始化默认 Agent</Button>
         <Button>Agent Builder 生成草稿</Button>
       </Space>
       <div ref={tableWrapperRef} style={tableCardStyle}>
@@ -334,7 +347,7 @@ export function AgentPage() {
               <Select options={categories.map((item) => ({ label: item, value: item }))} />
             </Form.Item>
             <Form.Item name="modelName" label="默认模型">
-              <Input />
+              <Select showSearch options={models.filter((item) => item.enabled).map((item) => ({ label: `${item.name} / ${item.modelId}`, value: item.name }))} />
             </Form.Item>
             <Form.Item name="risk" label="风险等级">
               <Select options={['低', '中', '高'].map((item) => ({ label: item, value: item }))} />

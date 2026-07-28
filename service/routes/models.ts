@@ -4,9 +4,18 @@ import { storagePaths } from '../config.js';
 import { includes, listResponse, parseBody, send } from '../http-utils.js';
 import { exportPayload, findNameConflict, mergeById, normalizeModelsImport, selectExportItems, validateImportUniqueNames } from '../import-export.js';
 import { checkModelHealth } from '../model-health.js';
+import { getOllamaStatus } from '../ollama-client.js';
 import { seedModels } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
 import type { ModelRecord } from '../types.js';
+
+async function validateLocalOllamaModel(provider: string | undefined, modelId: string | undefined) {
+  if (provider !== 'Ollama') return '';
+  const status = await getOllamaStatus();
+  if (!status.running) return 'Ollama 服务未运行';
+  if (!modelId || !status.models.some((item) => item.name === modelId)) return `本地未安装模型：${modelId || '-'}`;
+  return '';
+}
 
 export async function handleModelsRoute(
   request: http.IncomingMessage,
@@ -16,6 +25,38 @@ export async function handleModelsRoute(
   action?: string,
 ) {
   const models = await readJson<ModelRecord[]>(storagePaths.models, seedModels);
+
+  if (request.method === 'POST' && id === 'ollama-default') {
+    const status = await getOllamaStatus('http://127.0.0.1:11434');
+    const modelId = status.models.some((item) => item.name === 'qwen2.5-coder:7b') ? 'qwen2.5-coder:7b' : status.models[0]?.name ?? 'qwen2.5-coder:7b';
+    const modelName = '本地 Qwen Coder 7B';
+    const existing = models.find((item) => item.name === modelName || item.modelId === modelId);
+    const model: ModelRecord = {
+      id: existing?.id ?? `m-${randomUUID()}`,
+      name: existing?.name ?? modelName,
+      type: '本地离线模型',
+      provider: 'Ollama',
+      baseUrl: 'http://127.0.0.1:11434',
+      modelId,
+      contextWindow: 32768,
+      maxOutput: 4096,
+      timeout: 180,
+      enabled: true,
+      healthy: status.running && status.models.some((item) => item.name === modelId),
+      checkedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
+    };
+    const nextModels = existing ? models.map((item) => (item.id === existing.id ? model : item)) : [model, ...models];
+    await writeJsonAtomic(dataPath(storagePaths.models), nextModels);
+    await appendLog({
+      type: '系统日志',
+      level: model.healthy ? 'info' : 'warning',
+      projectName: '全局',
+      title: 'Ollama 默认模型已同步',
+      detail: `${model.name}: ${model.modelId}`,
+    });
+    send(response, 200, model);
+    return true;
+  }
 
   if (request.method === 'GET' && id === 'export') {
     const selected = selectExportItems(models, url);
@@ -61,6 +102,11 @@ export async function handleModelsRoute(
 
   if (request.method === 'POST' && !id) {
     const body = await parseBody<Partial<ModelRecord>>(request);
+    const localModelError = await validateLocalOllamaModel(body.provider, body.modelId);
+    if (localModelError) {
+      send(response, 400, { message: localModelError });
+      return true;
+    }
     const modelName = body.name ?? '未命名模型';
     const conflict = findNameConflict(models, modelName);
     if (conflict) {
@@ -89,6 +135,12 @@ export async function handleModelsRoute(
 
   if (request.method === 'PUT' && id) {
     const body = await parseBody<Partial<ModelRecord>>(request);
+    const existing = models.find((item) => item.id === id);
+    const localModelError = await validateLocalOllamaModel(body.provider ?? existing?.provider, body.modelId ?? existing?.modelId);
+    if (localModelError) {
+      send(response, 400, { message: localModelError });
+      return true;
+    }
     if (body.name !== undefined) {
       const conflict = findNameConflict(models, body.name, id);
       if (conflict) {

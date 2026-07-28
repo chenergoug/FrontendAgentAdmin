@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { nowText } from './config.js';
-import { appendLog } from './storage.js';
+import { nowText, storagePaths } from './config.js';
+import { appendLog, dataPath, readJson, writeJsonAtomic } from './storage.js';
 import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType } from './types.js';
 
 type RunningTask = {
@@ -14,6 +14,29 @@ type RunningTask = {
 const tasks = new Map<string, RunningTask>();
 const history: ProjectTaskRecord[] = [];
 const logsByTask = new Map<string, ProjectTaskLog[]>();
+const waiters = new Map<string, (record: ProjectTaskRecord) => void>();
+let persistQueue = Promise.resolve();
+
+async function persistTaskState() {
+  await writeJsonAtomic(dataPath(storagePaths.projectTasks), history);
+  await writeJsonAtomic(dataPath(storagePaths.projectTaskLogs), Array.from(logsByTask.values()).flat());
+}
+
+function schedulePersistTaskState() {
+  persistQueue = persistQueue.then(persistTaskState).catch((error) => console.error('Persist task state failed:', error));
+}
+
+async function hydrateTaskState() {
+  if (history.length > 0 || logsByTask.size > 0) return;
+  const [savedTasks, savedLogs] = await Promise.all([
+    readJson<ProjectTaskRecord[]>(storagePaths.projectTasks, []),
+    readJson<ProjectTaskLog[]>(storagePaths.projectTaskLogs, []),
+  ]);
+  history.push(...savedTasks.map((item) => item.status === 'running' ? { ...item, status: 'failed' as const, endedAt: nowText() } : item));
+  savedLogs.forEach((log) => logsByTask.set(log.taskId, [...(logsByTask.get(log.taskId) ?? []), log]));
+}
+
+await hydrateTaskState();
 
 function appendTaskLog(task: RunningTask, stream: ProjectTaskLog['stream'], text: string) {
   const log: ProjectTaskLog = {
@@ -25,6 +48,7 @@ function appendTaskLog(task: RunningTask, stream: ProjectTaskLog['stream'], text
   };
   task.logs.push(log);
   logsByTask.set(task.record.id, task.logs);
+  schedulePersistTaskState();
 }
 
 function getCommand(project: ProjectRecord, type: ProjectTaskType, command?: string) {
@@ -44,6 +68,9 @@ function finishTask(task: RunningTask, status: ProjectTaskStatus, exitCode: numb
   task.record.endedAt = nowText();
   tasks.delete(task.record.id);
   logsByTask.set(task.record.id, task.logs);
+  schedulePersistTaskState();
+  waiters.get(task.record.id)?.(task.record);
+  waiters.delete(task.record.id);
   void appendLog({
     type: '任务日志',
     level: status === 'success' ? 'info' : status === 'stopped' ? 'warning' : 'error',
@@ -53,13 +80,15 @@ function finishTask(task: RunningTask, status: ProjectTaskStatus, exitCode: numb
   });
 }
 
-export function listProjectTasks(projectId: string) {
+export async function listProjectTasks(projectId: string) {
+  await hydrateTaskState();
   return history
     .filter((task) => task.projectId === projectId)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 }
 
-export function readTaskLogs(taskId: string) {
+export async function readTaskLogs(taskId: string) {
+  await hydrateTaskState();
   return logsByTask.get(taskId) ?? [];
 }
 
@@ -98,6 +127,7 @@ export function startProjectTask(project: ProjectRecord, type: ProjectTaskType, 
   tasks.set(record.id, task);
   history.unshift(record);
   logsByTask.set(record.id, task.logs);
+  schedulePersistTaskState();
   appendTaskLog(task, 'system', `启动命令：${taskCommand}`);
 
   child.stdout.on('data', (chunk) => appendTaskLog(task, 'stdout', String(chunk)));
@@ -120,6 +150,12 @@ export function startProjectTask(project: ProjectRecord, type: ProjectTaskType, 
   });
 
   return record;
+}
+
+export function waitForProjectTask(taskId: string) {
+  const existing = history.find((item) => item.id === taskId);
+  if (existing && existing.status !== 'running') return Promise.resolve(existing);
+  return new Promise<ProjectTaskRecord>((resolve) => waiters.set(taskId, resolve));
 }
 
 export function stopProjectTask(projectId: string, taskId: string) {

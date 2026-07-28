@@ -1,4 +1,4 @@
-import type { PageResult, ProjectFileContent, ProjectFileNode, ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskType } from '../types';
+import type { PageResult, ProjectFileContent, ProjectFileNode, ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskType, ProjectValidationRecord } from '../types';
 import { request, type QueryValue } from './request';
 
 export const projectApi = {
@@ -20,6 +20,8 @@ export const projectApi = {
     request<ProjectTaskRecord>(`/projects/${id}/tasks/start`, { method: 'POST', body: JSON.stringify(data) }),
   stopTask: (id: string, taskId: string) => request<ProjectTaskRecord>(`/projects/${id}/tasks/${taskId}/stop`, { method: 'POST' }),
   taskLogs: (id: string, taskId: string) => request<{ list: ProjectTaskLog[] }>(`/projects/${id}/tasks/${taskId}/logs`),
+  validationList: (id: string) => request<{ list: ProjectValidationRecord[] }>(`/projects/${id}/validation`),
+  startValidation: (id: string) => request<ProjectValidationRecord>(`/projects/${id}/validation/start`, { method: 'POST' }),
   exportData: (ids: string[]) => request<{ resource: string; exportedAt: string; total: number; items: ProjectRecord[] }>('/projects/export', {}, { ids: ids.join(',') }),
   importData: (data: unknown) => request<{ imported: number; total: number }>('/projects/import', { method: 'POST', body: JSON.stringify(data) }),
 };

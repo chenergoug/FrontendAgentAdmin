@@ -1,45 +1,64 @@
 .child-layout {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .child-sider {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   background: #141922 !important;
 }
 
-.child-brand {
-  display: grid;
-  gap: 4px;
-  padding: 18px 18px 14px;
+.child-runtime-status {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+}
+
+.child-runtime-status .ant-tag {
+  max-width: 100%;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .child-main {
+  height: 100vh;
   min-width: 0;
+  overflow: hidden;
   background: #eef2f7;
-}
-
-.child-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  padding: 0 16px;
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
 }
 
 .child-content {
   min-width: 0;
+  min-height: 0;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .child-fill {
-  min-height: calc(100vh - 88px);
+  min-height: calc(100vh - 32px);
 }
 
 .child-panel-card {
-  height: calc(100vh - 88px);
+  height: calc(100vh - 32px);
   overflow: auto;
+}
+
+.workflow-toolbar {
+  min-width: 0;
+}
+
+.workflow-steps-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+}
+
+.workflow-steps {
+  min-width: 1180px;
 }
 
 .task-log-view {

@@ -7,6 +7,7 @@ import { readProjectFileContent, readProjectFileTree } from '../project-files.js
 import { seedProjects } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
 import { listProjectTasks, readTaskLogs, startProjectTask, stopProjectTask } from '../task-manager.js';
+import { listValidations, startValidation } from '../validation-runtime.js';
 import type { ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
 
 function applyProjectStatus(projects: ProjectRecord[], projectId: string, status: ProjectStatus) {
@@ -108,7 +109,7 @@ export async function handleProjectsRoute(
     }
 
     if (request.method === 'GET' && !subAction) {
-      send(response, 200, { list: listProjectTasks(id) });
+      send(response, 200, { list: await listProjectTasks(id) });
       return true;
     }
 
@@ -129,14 +130,41 @@ export async function handleProjectsRoute(
     }
 
     if (request.method === 'GET' && subAction && extraAction === 'logs') {
-      send(response, 200, { list: readTaskLogs(subAction) });
+      send(response, 200, { list: await readTaskLogs(subAction) });
+      return true;
+    }
+  }
+
+  if (id && action === 'validation') {
+    const project = projects.find((item) => item.id === id);
+    if (!project) {
+      send(response, 404, { message: '项目不存在' });
+      return true;
+    }
+    if (request.method === 'GET') {
+      send(response, 200, { list: await listValidations(id) });
+      return true;
+    }
+    if (request.method === 'POST' && subAction === 'start') {
+      send(response, 201, await startValidation(project));
       return true;
     }
   }
 
   if (request.method === 'POST' && !id) {
     const body = await parseBody<Partial<ProjectRecord>>(request);
-    const projectName = body.name ?? '未命名项目';
+    const requiredFields: Array<[keyof ProjectRecord, string]> = [
+      ['name', '项目名称'],
+      ['shape', '项目形态'],
+      ['deviceType', '项目类型'],
+      ['rootPath', '项目路径'],
+    ];
+    const missingFields = requiredFields.filter(([key]) => !String(body[key] ?? '').trim()).map(([, label]) => label);
+    if (missingFields.length > 0) {
+      send(response, 400, { message: `请填写必填内容：${missingFields.join('、')}` });
+      return true;
+    }
+    const projectName = String(body.name).trim();
     const conflict = findNameConflict(projects, projectName);
     if (conflict) {
       send(response, 409, { message: `项目名称“${String(projectName).trim()}”已存在` });

@@ -11,7 +11,7 @@ export function dataPath(relativePath: string) {
 
 export async function writeJsonAtomic(file: string, value: unknown) {
   await mkdir(path.dirname(file), { recursive: true });
-  const tempFile = `${file}.${process.pid}.${Date.now()}.tmp`;
+  const tempFile = `${file}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   await writeFile(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await rename(tempFile, file);
 }
@@ -110,6 +110,13 @@ export async function bootstrapStorage() {
   await readMigratedJson(storagePaths.models, seedModels);
   const agents = await readMigratedJson(storagePaths.agents, seedAgents);
   await Promise.all(agents.map(writeAgentFiles));
+  await readJson(storagePaths.agentRuns, []);
+  await readJson(storagePaths.agentRunLogs, []);
+  await readJson(storagePaths.workflowSnapshots, []);
+  await readJson(storagePaths.fileChanges, []);
+  await readJson(storagePaths.projectTasks, []);
+  await readJson(storagePaths.projectTaskLogs, []);
+  await readJson(storagePaths.validations, []);
   await readMigratedJson(storagePaths.settings, createSeedSettings(defaultDataDir));
   await readMigratedJson(storagePaths.recovery, seedRecovery);
   await readMigratedJson(storagePaths.modelUsage, seedModelUsage);

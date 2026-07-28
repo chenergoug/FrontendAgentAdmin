@@ -1,9 +1,9 @@
-import { ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Space, Table, Tag, message } from 'antd';
+import { CheckCircleOutlined, ReloadOutlined, ToolOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Empty, Popconfirm, Space, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
-import { projectApi } from '../../src/api';
-import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType } from '../../src/types';
+import { fileChangeApi, projectApi } from '../../src/api';
+import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType, ProjectValidationRecord } from '../../src/types';
 import { formatDateTimeToSecond } from '../../src/utils/time';
 import type { TaskPanelMode } from '../types';
 
@@ -17,13 +17,15 @@ const taskStatusColor: Record<ProjectTaskStatus, string> = {
 type TaskPanelProps = {
   project: ProjectRecord;
   mode: TaskPanelMode;
+  onOpenChanges?: () => void;
 };
 
-export function TaskPanel({ project, mode }: TaskPanelProps) {
+export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
   const [tasks, setTasks] = useState<ProjectTaskRecord[]>([]);
   const [logs, setLogs] = useState<ProjectTaskLog[]>([]);
   const [currentTaskId, setCurrentTaskId] = useState('');
   const [loading, setLoading] = useState(false);
+  const [validations, setValidations] = useState<ProjectValidationRecord[]>([]);
 
   const loadTaskLogs = useCallback(
     (taskId: string) => {
@@ -33,9 +35,9 @@ export function TaskPanel({ project, mode }: TaskPanelProps) {
   );
 
   const loadTasks = useCallback(() => {
-    projectApi
-      .taskList(project.id)
-      .then((result) => {
+    Promise.all([projectApi.taskList(project.id), projectApi.validationList(project.id)])
+      .then(([result, validationResult]) => {
+        setValidations(validationResult.list);
         setTasks(result.list);
         const nextCurrent = currentTaskId || result.list[0]?.id || '';
         if (nextCurrent) {
@@ -112,6 +114,34 @@ export function TaskPanel({ project, mode }: TaskPanelProps) {
   ];
 
   const availableTypes: ProjectTaskType[] = mode === 'runtime' ? ['dev'] : ['build', 'lint', 'test'];
+  const latestValidation = validations[0];
+
+  const startValidation = async () => {
+    setLoading(true);
+    try {
+      await projectApi.startValidation(project.id);
+      message.success('一键验证已启动');
+      loadTasks();
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateFix = async () => {
+    if (!latestValidation?.report) return;
+    setLoading(true);
+    try {
+      const result = await fileChangeApi.generate({ projectId: project.id, agentId: 'a-debug', task: `修复以下验证失败问题：\n\n${latestValidation.report}` });
+      message.success(`已生成 ${result.files.length} 个修复文件`);
+      onOpenChanges?.();
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <Space direction="vertical" size={16} className="full-width">
@@ -122,11 +152,21 @@ export function TaskPanel({ project, mode }: TaskPanelProps) {
               启动 {type}
             </Button>
           ))}
+          {mode === 'build' ? <Popconfirm title="按顺序执行 Lint、测试和构建？" onConfirm={startValidation}><Button type="primary" icon={<CheckCircleOutlined />} loading={loading}>一键验证</Button></Popconfirm> : null}
           <Button icon={<ReloadOutlined />} onClick={loadTasks}>
             刷新
           </Button>
         </Space>
       </Card>
+      {mode === 'build' && latestValidation ? (
+        <Alert
+          type={latestValidation.status === 'success' ? 'success' : latestValidation.status === 'failed' ? 'error' : 'info'}
+          showIcon
+          message={`一键验证：${latestValidation.status}${latestValidation.currentStep ? ` · ${latestValidation.currentStep}` : ''}`}
+          description={latestValidation.status === 'failed' ? '验证已在失败步骤停止，可生成修复变更后重新执行。' : undefined}
+          action={latestValidation.status === 'failed' ? <Button icon={<ToolOutlined />} onClick={generateFix}>生成修复变更</Button> : undefined}
+        />
+      ) : null}
       <Card title="任务列表">
         <Table columns={columns} dataSource={tasks} rowKey="id" pagination={false} size="middle" scroll={{ x: 'max-content' }} />
       </Card>
