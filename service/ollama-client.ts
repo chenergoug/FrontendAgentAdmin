@@ -85,7 +85,9 @@ export async function generateWithOllama(input: {
   maxOutputTokens?: number;
   timeoutSeconds?: number;
   json?: boolean;
+  signal?: AbortSignal;
 }) {
+  const timeoutSignal = AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? 120) * 1000);
   const response = await fetch(`${normalizeBaseUrl(input.baseUrl)}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -100,7 +102,7 @@ export async function generateWithOllama(input: {
         num_predict: input.maxOutputTokens,
       },
     }),
-    signal: AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? 120) * 1000),
+    signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
   });
 
   const data = (await response.json().catch(() => ({}))) as OllamaGenerateResponse & { error?: unknown };

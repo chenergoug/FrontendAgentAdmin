@@ -7,6 +7,7 @@ import { buildProjectSourceContext } from './project-context.js';
 import { createRecoveryItem } from './recovery-runtime.js';
 import { appendLog, dataPath, readJson, writeAgentFiles, writeJsonAtomic } from './storage.js';
 import type { AgentRecord, AgentRunLog, AgentRunRecord, ModelRecord, ProjectRecord } from './types.js';
+import { createProjectCancellation } from './project-cancellation.js';
 
 type StartAgentRunInput = {
   projectId: string;
@@ -204,6 +205,7 @@ export async function startAgentRun(input: StartAgentRunInput) {
   await writeJsonAtomic(dataPath(storagePaths.agentRuns), nextRuns);
   await writeJsonAtomic(dataPath(storagePaths.agentRunLogs), logs);
 
+  const cancellation = createProjectCancellation(input.projectId);
   try {
     const result = await generateWithModel({
       model,
@@ -215,6 +217,7 @@ export async function startAgentRun(input: StartAgentRunInput) {
       ].join('\n\n'),
       prompt: await buildPrompt(project, input.input, input.structured, ['前端开发', '后端开发', '代码审核', '调试修复', '测试构建'].includes(agent.category)),
       json: input.structured,
+      signal: cancellation.signal,
     });
 
     const completed: AgentRunRecord = {
@@ -240,10 +243,11 @@ export async function startAgentRun(input: StartAgentRunInput) {
     });
     return completed;
   } catch (error) {
+    const stopped = cancellation.signal.aborted;
     const failed: AgentRunRecord = {
       ...run,
-      status: 'failed',
-      error: normalizeModelError(error, model),
+      status: stopped ? 'stopped' : 'failed',
+      error: stopped ? '项目客户端已关闭，运行已停止' : normalizeModelError(error, model),
       endedAt: nowText(),
     };
     const latestRuns = await readJson<AgentRunRecord[]>(storagePaths.agentRuns, []);
@@ -263,5 +267,7 @@ export async function startAgentRun(input: StartAgentRunInput) {
     });
     await createRecoveryItem({ type: '失败任务', projectName: project.name, title: `${agent.name} 执行失败`, detail: failed.error, severity: '中' });
     return failed;
+  } finally {
+    cancellation.release();
   }
 }

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { nowText, storagePaths } from './config.js';
 import { createDefaultAgents } from './default-agents.js';
 import { generateWithModel, normalizeModelError } from './model-client.js';
+import { createProjectCancellation } from './project-cancellation.js';
 import { resolveModelExecutionProfile } from './model-capabilities.js';
 import { dataPath, readJson, writeJsonAtomic } from './storage.js';
 import type { AgentPlan, AgentPlanItem, AgentRecord, ModelRecord, ProjectRecord, WorkflowStageKey } from './types.js';
@@ -97,7 +98,7 @@ function parseCapabilityAnalysis(text: string): CapabilityAnalysis {
   } as CapabilityAnalysis;
 }
 
-async function analyzeProjectCapabilities(project: ProjectRecord, planning: string, model: ModelRecord) {
+async function analyzeProjectCapabilities(project: ProjectRecord, planning: string, model: ModelRecord, signal?: AbortSignal) {
   const executionProfile = resolveModelExecutionProfile(model);
   const prompt = [
     `项目名称：${project.name}`,
@@ -124,6 +125,7 @@ async function analyzeProjectCapabilities(project: ProjectRecord, planning: stri
       json: model.capabilities.structuredOutput,
       maxOutputTokens: executionProfile.outputBudget,
       timeoutSeconds: executionProfile.timeoutSeconds,
+      signal,
     });
     try {
       return parseCapabilityAnalysis(result.text);
@@ -136,6 +138,7 @@ async function analyzeProjectCapabilities(project: ProjectRecord, planning: stri
         json: model.capabilities.structuredOutput,
         maxOutputTokens: executionProfile.outputBudget,
         timeoutSeconds: executionProfile.timeoutSeconds,
+        signal,
       });
       return parseCapabilityAnalysis(repaired.text);
     }
@@ -209,9 +212,17 @@ export async function getProjectAgentPlan(projectId: string, nextPlanning?: stri
     .update(JSON.stringify([capabilitySchemaVersion, project.description, project.requirement, project.constraints, planning, model.id, model.modelId, model.contextWindow, model.maxOutput, model.timeout, model.capabilities, model.execution]))
     .digest('hex');
   const savedPlan = savedPlans.find((item) => item.projectId === projectId);
-  const analysis = nextPlanning === undefined && savedPlan?.fingerprint === fingerprint && savedPlan.analysis
-    ? savedPlan.analysis
-    : await analyzeProjectCapabilities(project, planning, model);
+  let analysis: CapabilityAnalysis;
+  if (nextPlanning === undefined && savedPlan?.fingerprint === fingerprint && savedPlan.analysis) {
+    analysis = savedPlan.analysis;
+  } else {
+    const cancellation = createProjectCancellation(projectId);
+    try {
+      analysis = await analyzeProjectCapabilities(project, planning, model, cancellation.signal);
+    } finally {
+      cancellation.release();
+    }
+  }
   analysis.technologyRecommendations = mergeConfirmedTechnologyRecommendations(
     normalizeTechnologyRecommendations(analysis.technologyRecommendations),
     savedPlan?.analysis?.technologyRecommendations,

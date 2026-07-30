@@ -13,7 +13,7 @@ export const projectApi = {
   open: (id: string) => request<ProjectRecord>(`/projects/${id}/open`, { method: 'POST' }),
   close: (id: string) => request<ProjectRecord>(`/projects/${id}/close`, { method: 'POST' }),
   openClient: (id: string) => request<ProjectRecord>(`/projects/${id}/client/open`, { method: 'POST' }),
-  closeClient: (id: string) => request<ProjectRecord>(`/projects/${id}/client/close`, { method: 'POST' }),
+  closeClient: (id: string, keepalive = false) => request<ProjectRecord>(`/projects/${id}/client/close`, { method: 'POST', keepalive }),
   clientStatus: (id: string) =>
     request<{ projectId: string; running: boolean; status: ProjectRecord['status']; updatedAt: string }>(`/projects/${id}/client/status`),
   fileTree: (id: string) => request<{ list: ProjectFileNode[] }>(`/projects/${id}/files/tree`),

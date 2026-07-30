@@ -10,6 +10,8 @@ import { deleteProjectSecrets, hasProjectDatabasePassword, setProjectDatabasePas
 import { listProjectTasks, readTaskLogs, startProjectTask, stopProjectTask } from '../task-manager.js';
 import { listValidations, startValidation } from '../validation-runtime.js';
 import type { ModelRecord, ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
+import { cancelProjectOperations } from '../project-cancellation.js';
+import { stopProjectWorkflow } from '../workflow-runtime.js';
 
 type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
 
@@ -404,6 +406,18 @@ export async function handleProjectsRoute(
     if (subAction === 'open' && project.status === 'running') {
       send(response, 409, { message: '该项目子客户端已在运行中，请先关闭后再打开' });
       return true;
+    }
+    if (subAction === 'close') {
+      cancelProjectOperations(id);
+      await stopProjectWorkflow(id);
+      const runningTasks = (await listProjectTasks(id)).filter((task) => task.status === 'running');
+      for (const task of runningTasks) {
+        try {
+          stopProjectTask(id, task.id);
+        } catch {
+          // The task may finish between listing and stopping.
+        }
+      }
     }
     const status: ProjectStatus = subAction === 'open' ? 'running' : 'ready';
     const changed = project.status !== status;

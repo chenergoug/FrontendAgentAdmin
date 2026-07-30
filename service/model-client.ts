@@ -8,7 +8,13 @@ type GenerateInput = {
   json?: boolean;
   maxOutputTokens?: number;
   timeoutSeconds?: number;
+  signal?: AbortSignal;
 };
+
+function requestSignal(input: GenerateInput) {
+  const timeout = AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? input.model.timeout) * 1000);
+  return input.signal ? AbortSignal.any([input.signal, timeout]) : timeout;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -109,7 +115,7 @@ async function generateOpenAiCompatible(input: GenerateInput) {
         max_tokens: input.maxOutputTokens ?? input.model.maxOutput,
         ...(input.json ? { response_format: { type: 'json_object' } } : {}),
       }),
-      signal: AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? input.model.timeout) * 1000),
+      signal: requestSignal(input),
     });
   } catch (error) {
     throw new Error(`模型“${input.model.name}”（${input.model.provider}）连接失败：${readableValue(error) || '网络请求失败'}；请求地址：${endpoint}`);
@@ -142,6 +148,7 @@ export async function generateWithModel(input: GenerateInput) {
         maxOutputTokens: input.maxOutputTokens ?? input.model.maxOutput,
         timeoutSeconds: input.timeoutSeconds ?? input.model.timeout,
         json: input.json,
+        signal: input.signal,
       });
     }
     return await generateOpenAiCompatible(input);

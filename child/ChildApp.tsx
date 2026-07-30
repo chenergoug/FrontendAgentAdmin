@@ -103,6 +103,15 @@ export function ChildApp() {
     }
   }, [project.id])
 
+  useEffect(() => {
+    if (!project.id || window.frontendAgent) return
+    const cancelProjectOperations = () => {
+      void projectApi.closeClient(project.id, true).catch(() => undefined)
+    }
+    window.addEventListener('pagehide', cancelProjectOperations)
+    return () => window.removeEventListener('pagehide', cancelProjectOperations)
+  }, [project.id])
+
   const renderContent = () => {
     if (closedByHost) return <LockedProject />
     if (!hasProject) return null

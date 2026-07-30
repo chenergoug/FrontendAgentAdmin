@@ -219,6 +219,11 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
         error: error instanceof Error ? error.message : String(error),
       };
     }
+    const latestSnapshot = (await readSnapshots()).find((item) => item.projectId === projectId);
+    const latestStage = latestSnapshot?.stages.find((item) => item.key === stageKey);
+    if (latestStage?.status === 'failed' && latestStage.error === '项目客户端已关闭，运行已停止') {
+      return latestSnapshot!;
+    }
     const status = run.status === 'success' ? (stage.requiresApproval ? 'review' : 'approved') : 'failed';
     return saveSnapshot({
       ...snapshot,
@@ -266,6 +271,24 @@ export async function approveWorkflowStage(projectId: string, stageKey: Workflow
 export async function updateWorkflowMode(projectId: string, autoMode: boolean) {
   const snapshot = await getWorkflow(projectId);
   return saveSnapshot({ ...snapshot, autoMode, updatedAt: nowText() });
+}
+
+export async function stopProjectWorkflow(projectId: string) {
+  const snapshots = await readSnapshots();
+  const snapshot = snapshots.find((item) => item.projectId === projectId);
+  if (!snapshot || !snapshot.stages.some((stage) => stage.status === 'running')) return snapshot ?? null;
+  const stopped = {
+    ...snapshot,
+    autoMode: false,
+    updatedAt: nowText(),
+    stages: snapshot.stages.map((stage) => stage.status === 'running' ? {
+      ...stage,
+      status: 'failed' as const,
+      error: '项目客户端已关闭，运行已停止',
+      updatedAt: nowText(),
+    } : stage),
+  };
+  return saveSnapshot(stopped);
 }
 
 export async function getWorkflowCapabilities(projectId: string): Promise<WorkflowCapabilityReport> {
