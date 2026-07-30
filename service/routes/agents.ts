@@ -7,9 +7,24 @@ import { ensureDefaultAgents } from '../agent-runtime.js';
 import { seedAgents } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeAgentFiles, writeJsonAtomic } from '../storage.js';
 import type { AgentRecord } from '../types.js';
+import { getProjectAgentPlan } from '../agent-planner.js';
 
 export async function handleAgentsRoute(request: http.IncomingMessage, response: http.ServerResponse, url: URL, id?: string) {
   const agents = await readJson<AgentRecord[]>(storagePaths.agents, seedAgents);
+
+  if (request.method === 'GET' && id === 'plan') {
+    send(response, 200, await getProjectAgentPlan(url.searchParams.get('projectId') ?? ''));
+    return true;
+  }
+  if (request.method === 'POST' && id === 'plan') {
+    const body = await parseBody<{ projectId?: string; planning?: string }>(request);
+    if (!body.planning?.trim()) {
+      send(response, 400, { message: '开发规划不能为空' });
+      return true;
+    }
+    send(response, 200, await getProjectAgentPlan(body.projectId ?? '', body.planning));
+    return true;
+  }
 
   if (request.method === 'POST' && id === 'defaults') {
     const body = await parseBody<{ modelName?: string }>(request);
@@ -71,6 +86,10 @@ export async function handleAgentsRoute(request: http.IncomingMessage, response:
 
   if (request.method === 'POST' && !id) {
     const body = await parseBody<Partial<AgentRecord>>(request);
+    if (body.category === '主调度' || /总调度/.test(body.name ?? '')) {
+      send(response, 400, { message: '主调度是平台内置规划机制，不能创建为 Agent' });
+      return true;
+    }
     const agentName = body.name ?? '未命名 Agent';
     const conflict = findNameConflict(agents, agentName);
     if (conflict) {
@@ -88,6 +107,9 @@ export async function handleAgentsRoute(request: http.IncomingMessage, response:
       prompt: body.prompt ?? '',
       permissions: body.permissions ?? ['读取文件', '生成 Diff'],
       approvalRules: body.approvalRules ?? ['写文件需要确认'],
+      contextRules: body.contextRules ?? ['只读取当前项目和任务相关上下文', '信息不足时明确列出待确认项，不得编造'],
+      outputFormat: body.outputFormat ?? '输出结论、执行内容、风险、验证结果和下一步。',
+      qualityGates: body.qualityGates ?? ['输出与用户需求一致', '高风险操作已标记人工确认', '不存在无法验证的完成声明'],
     };
     await writeJsonAtomic(dataPath(storagePaths.agents), [agent, ...agents]);
     await writeAgentFiles(agent);
@@ -98,6 +120,10 @@ export async function handleAgentsRoute(request: http.IncomingMessage, response:
 
   if (request.method === 'PUT' && id) {
     const body = await parseBody<Partial<AgentRecord>>(request);
+    if (body.category === '主调度' || /总调度/.test(body.name ?? '')) {
+      send(response, 400, { message: '主调度是平台内置规划机制，不能配置为 Agent' });
+      return true;
+    }
     if (body.name !== undefined) {
       const conflict = findNameConflict(agents, body.name, id);
       if (conflict) {

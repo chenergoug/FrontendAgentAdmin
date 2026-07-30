@@ -9,11 +9,12 @@ import { seedModels } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
 import type { ModelRecord } from '../types.js';
 
-async function validateLocalOllamaModel(provider: string | undefined, modelId: string | undefined) {
-  if (provider !== 'Ollama') return '';
-  const status = await getOllamaStatus();
+async function validateLocalOllamaModel(model: Partial<ModelRecord>) {
+  if (model.type !== '本地离线模型') return '';
+  if (model.provider !== 'Ollama') return '当前本地模型仅支持通过 Ollama 扫描添加';
+  const status = await getOllamaStatus(model.baseUrl || defaultOllamaBaseUrl);
   if (!status.running) return 'Ollama 服务未运行';
-  if (!modelId || !status.models.some((item) => item.name === modelId)) return `本地未安装模型：${modelId || '-'}`;
+  if (!model.modelId || !status.models.some((item) => item.name === model.modelId)) return `本地未安装模型：${model.modelId || '-'}`;
   return '';
 }
 
@@ -102,7 +103,7 @@ export async function handleModelsRoute(
 
   if (request.method === 'POST' && !id) {
     const body = await parseBody<Partial<ModelRecord>>(request);
-    const localModelError = await validateLocalOllamaModel(body.provider, body.modelId);
+    const localModelError = await validateLocalOllamaModel(body);
     if (localModelError) {
       send(response, 400, { message: localModelError });
       return true;
@@ -136,7 +137,7 @@ export async function handleModelsRoute(
   if (request.method === 'PUT' && id) {
     const body = await parseBody<Partial<ModelRecord>>(request);
     const existing = models.find((item) => item.id === id);
-    const localModelError = await validateLocalOllamaModel(body.provider ?? existing?.provider, body.modelId ?? existing?.modelId);
+    const localModelError = await validateLocalOllamaModel({ ...existing, ...body });
     if (localModelError) {
       send(response, 400, { message: localModelError });
       return true;

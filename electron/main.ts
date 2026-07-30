@@ -106,6 +106,15 @@ ipcMain.handle('native-dialog:select-directory', async (event) => {
   return result.canceled ? null : result.filePaths[0] ?? null;
 });
 
+ipcMain.handle('main:open-agent-configuration', (_event, request: unknown) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { opened: false };
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('main:agent-configuration-requested', request);
+  return { opened: true };
+});
+
 async function markProjectClientClosed(projectId: string) {
   try {
     await fetch(`${serviceUrl}/projects/${encodeURIComponent(projectId)}/client/close`, { method: 'POST' });

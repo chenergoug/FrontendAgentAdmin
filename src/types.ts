@@ -12,6 +12,17 @@ export type ProjectRecord = {
   deviceType: ProjectDeviceType;
   businessType: string;
   rootPath: string;
+  serverFramework: string;
+  serverRootPath: string;
+  serverDevCommand: string;
+  serverBuildCommand: string;
+  serverTestCommand: string;
+  databaseType: string;
+  databaseHost: string;
+  databasePort: string;
+  databaseName: string;
+  databaseUsername: string;
+  databasePasswordConfigured: boolean;
   gitRemote: string;
   branch: string;
   serverUrl: string;
@@ -52,6 +63,40 @@ export type AgentRecord = {
   prompt: string;
   permissions: string[];
   approvalRules: string[];
+  contextRules: string[];
+  outputFormat: string;
+  qualityGates: string[];
+};
+
+export type AgentConfigurationRequest = {
+  mode: 'create' | 'edit';
+  agentId?: string;
+  draft?: Partial<AgentRecord>;
+  task?: string;
+  requestId?: number;
+};
+
+export type AgentPlanItem = {
+  key: string;
+  workflowStageKey?: WorkflowStageKey;
+  expectedAgentId: string;
+  name: string;
+  category: string;
+  task: string;
+  required: boolean;
+  available: boolean;
+  agent: AgentRecord | null;
+  proposedAgent: AgentRecord;
+};
+
+export type AgentPlan = {
+  projectId: string;
+  planning: string;
+  summary: string;
+  hasFrontend: boolean;
+  hasBackend: boolean;
+  items: AgentPlanItem[];
+  updatedAt: string;
 };
 
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'stopped';
@@ -99,6 +144,7 @@ export type WorkflowStageRecord = {
 
 export type WorkflowSnapshot = {
   id: string;
+  version: number;
   projectId: string;
   projectName: string;
   activeStage: WorkflowStageKey;
@@ -107,6 +153,13 @@ export type WorkflowSnapshot = {
   stages: WorkflowStageRecord[];
   createdAt: string;
   updatedAt: string;
+};
+
+export type WorkflowHistoryRecord = WorkflowSnapshot & {
+  historyId: string;
+  rerunFrom: WorkflowStageKey;
+  rerunReason: string;
+  archivedAt: string;
 };
 
 export type WorkflowCapability = { stageKey: WorkflowStageKey; agentId: string; available: boolean; reasons: string[] };

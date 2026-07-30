@@ -79,13 +79,32 @@ export async function writeAgentFiles(agent: AgentRecord) {
     description: agent.description,
     permissions: agent.permissions,
     approvalRules: agent.approvalRules,
+    contextRules: agent.contextRules,
+    qualityGates: agent.qualityGates,
   });
   await writeFile(path.join(dir, 'prompt.md'), agent.prompt || '', 'utf8');
-  await writeJsonAtomic(path.join(dir, 'schema.json'), { output: 'diff | plan | report', strict: true });
+  await writeJsonAtomic(path.join(dir, 'schema.json'), { output: agent.outputFormat, strict: true });
   await writeJsonAtomic(path.join(dir, 'workflow.json'), {
     approvalRequired: agent.approvalRules,
     toolPermissions: agent.permissions,
+    contextRules: agent.contextRules,
+    qualityGates: agent.qualityGates,
   });
+}
+
+function normalizeStoredAgent(agent: AgentRecord): AgentRecord {
+  return {
+    ...agent,
+    permissions: Array.isArray(agent.permissions) ? agent.permissions : [],
+    approvalRules: Array.isArray(agent.approvalRules) ? agent.approvalRules : [],
+    contextRules: Array.isArray(agent.contextRules)
+      ? agent.contextRules
+      : ['仅使用当前项目和任务相关上下文', '信息不足时明确列出待确认项，不得编造'],
+    outputFormat: agent.outputFormat || '输出结论、执行内容、风险、验证结果和下一步。',
+    qualityGates: Array.isArray(agent.qualityGates)
+      ? agent.qualityGates
+      : ['输出与用户需求一致', '高风险操作已标记人工确认', '不存在无法验证的完成声明'],
+  };
 }
 
 export async function bootstrapStorage() {
@@ -107,12 +126,21 @@ export async function bootstrapStorage() {
     logDir: dataPath('logs'),
   });
   await readMigratedJson(storagePaths.projects, seedProjects);
+  await readJson(storagePaths.projectSecrets, []);
   await readMigratedJson(storagePaths.models, seedModels);
-  const agents = await readMigratedJson(storagePaths.agents, seedAgents);
+  const storedAgents = await readMigratedJson(storagePaths.agents, seedAgents);
+  const agents = storedAgents
+    .filter((agent) => agent.id !== 'a-orchestrator' && agent.category !== '主调度' && !/总调度/.test(agent.name))
+    .map(normalizeStoredAgent);
+  if (JSON.stringify(agents) !== JSON.stringify(storedAgents)) {
+    await writeJsonAtomic(dataPath(storagePaths.agents), agents);
+  }
   await Promise.all(agents.map(writeAgentFiles));
   await readJson(storagePaths.agentRuns, []);
   await readJson(storagePaths.agentRunLogs, []);
+  await readJson(storagePaths.projectAgentPlans, []);
   await readJson(storagePaths.workflowSnapshots, []);
+  await readJson(storagePaths.workflowHistory, []);
   await readJson(storagePaths.fileChanges, []);
   await readJson(storagePaths.projectTasks, []);
   await readJson(storagePaths.projectTaskLogs, []);

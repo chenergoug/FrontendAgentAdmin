@@ -6,9 +6,52 @@ import { exportPayload, findNameConflict, mergeById, normalizeProjectsImport, se
 import { readProjectFileContent, readProjectFileTree } from '../project-files.js';
 import { seedProjects } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
+import { deleteProjectSecrets, hasProjectDatabasePassword, setProjectDatabasePassword } from '../project-secrets.js';
 import { listProjectTasks, readTaskLogs, startProjectTask, stopProjectTask } from '../task-manager.js';
 import { listValidations, startValidation } from '../validation-runtime.js';
 import type { ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
+
+type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
+
+function validateServerConfiguration(project: Partial<ProjectRecord>, passwordConfigured: boolean) {
+  if (project.shape === '纯前端') return [];
+  const fields: Array<[unknown, string]> = [
+    [project.serverUrl, '服务器地址'],
+    [project.serverFramework, '服务端技术栈'],
+    [project.serverRootPath, '服务端目录'],
+    [project.serverDevCommand, '服务端运行命令'],
+    [project.serverBuildCommand, '服务端构建命令'],
+    [project.serverTestCommand, '服务端测试命令'],
+    [project.databaseType, '数据库类型'],
+    [project.databaseHost, '数据库主机'],
+    [project.databasePort, '数据库端口'],
+    [project.databaseName, '数据库名称'],
+    [project.databaseUsername, '数据库账号'],
+  ];
+  const missing = fields.filter(([value]) => !String(value ?? '').trim()).map(([, label]) => label);
+  if (!passwordConfigured) missing.push('数据库密码');
+  const port = Number(project.databasePort);
+  if (project.databasePort && (!Number.isInteger(port) || port < 1 || port > 65535)) missing.push('有效的数据库端口');
+  return [...new Set(missing)];
+}
+
+function clearServerConfiguration<T extends Partial<ProjectRecord>>(project: T): T {
+  return {
+    ...project,
+    serverFramework: '',
+    serverRootPath: '',
+    serverDevCommand: '',
+    serverBuildCommand: '',
+    serverTestCommand: '',
+    serverUrl: '',
+    databaseType: '',
+    databaseHost: '',
+    databasePort: '',
+    databaseName: '',
+    databaseUsername: '',
+    databasePasswordConfigured: false,
+  };
+}
 
 function applyProjectStatus(projects: ProjectRecord[], projectId: string, status: ProjectStatus) {
   return projects.map((item) => (item.id === projectId ? { ...item, status, updatedAt: nowText() } : item));
@@ -152,7 +195,7 @@ export async function handleProjectsRoute(
   }
 
   if (request.method === 'POST' && !id) {
-    const body = await parseBody<Partial<ProjectRecord>>(request);
+    const body = await parseBody<ProjectMutation>(request);
     const requiredFields: Array<[keyof ProjectRecord, string]> = [
       ['name', '项目名称'],
       ['shape', '项目形态'],
@@ -160,6 +203,7 @@ export async function handleProjectsRoute(
       ['rootPath', '项目路径'],
     ];
     const missingFields = requiredFields.filter(([key]) => !String(body[key] ?? '').trim()).map(([, label]) => label);
+    missingFields.push(...validateServerConfiguration(body, Boolean(body.databasePassword?.trim())));
     if (missingFields.length > 0) {
       send(response, 400, { message: `请填写必填内容：${missingFields.join('、')}` });
       return true;
@@ -170,7 +214,7 @@ export async function handleProjectsRoute(
       send(response, 409, { message: `项目名称“${String(projectName).trim()}”已存在` });
       return true;
     }
-    const project: ProjectRecord = {
+    let project: ProjectRecord = {
       id: `p-${randomUUID()}`,
       name: projectName,
       source: body.source ?? '新建',
@@ -178,6 +222,17 @@ export async function handleProjectsRoute(
       deviceType: body.deviceType ?? 'PC端',
       businessType: body.businessType ?? '',
       rootPath: body.rootPath ?? '',
+      serverFramework: body.serverFramework ?? '',
+      serverRootPath: body.serverRootPath ?? '',
+      serverDevCommand: body.serverDevCommand ?? '',
+      serverBuildCommand: body.serverBuildCommand ?? '',
+      serverTestCommand: body.serverTestCommand ?? '',
+      databaseType: body.databaseType ?? '',
+      databaseHost: body.databaseHost ?? '',
+      databasePort: body.databasePort ?? '',
+      databaseName: body.databaseName ?? '',
+      databaseUsername: body.databaseUsername ?? '',
+      databasePasswordConfigured: body.shape !== '纯前端',
       gitRemote: body.gitRemote ?? '',
       branch: body.branch ?? 'develop',
       serverUrl: body.serverUrl ?? '',
@@ -191,6 +246,8 @@ export async function handleProjectsRoute(
       description: body.description ?? '',
       requirement: body.requirement ?? '',
     };
+    if (project.shape === '纯前端') project = clearServerConfiguration(project);
+    if (body.databasePassword?.trim()) await setProjectDatabasePassword(project.id, body.databasePassword);
     await writeJsonAtomic(dataPath(storagePaths.projects), [project, ...projects]);
     await appendLog({
       type: '项目日志',
@@ -204,17 +261,36 @@ export async function handleProjectsRoute(
   }
 
   if (request.method === 'PUT' && id) {
-    const body = await parseBody<Partial<ProjectRecord>>(request);
-    if (body.name !== undefined) {
-      const conflict = findNameConflict(projects, body.name, id);
+    const body = await parseBody<ProjectMutation>(request);
+    const { databasePassword, databasePasswordConfigured: _ignored, ...projectChanges } = body;
+    if (projectChanges.name !== undefined) {
+      const conflict = findNameConflict(projects, projectChanges.name, id);
       if (conflict) {
         send(response, 409, { message: `项目名称“${String(body.name).trim()}”已存在` });
         return true;
       }
     }
+    const existing = projects.find((item) => item.id === id);
+    if (!existing) {
+      send(response, 404, { message: '项目不存在' });
+      return true;
+    }
+    const nextShape = projectChanges.shape ?? existing.shape;
+    const effectiveChanges = nextShape === '纯前端' ? clearServerConfiguration(projectChanges) : projectChanges;
+    const passwordConfigured = nextShape === '纯前端'
+      ? false
+      : Boolean(databasePassword?.trim()) || await hasProjectDatabasePassword(id);
+    const candidate = { ...existing, ...effectiveChanges, databasePasswordConfigured: passwordConfigured };
+    const missingServerFields = validateServerConfiguration(candidate, passwordConfigured);
+    if (missingServerFields.length > 0) {
+      send(response, 400, { message: `请填写必填内容：${missingServerFields.join('、')}` });
+      return true;
+    }
+    if (nextShape === '纯前端') await deleteProjectSecrets(id);
+    else if (databasePassword?.trim()) await setProjectDatabasePassword(id, databasePassword);
     const updated = projects.map((item) =>
       item.id === id
-        ? { ...item, ...body, id: item.id, configVersion: item.configVersion + 1, updatedAt: nowText(), status: item.status === 'draft' ? 'ready' : item.status }
+        ? { ...item, ...effectiveChanges, databasePasswordConfigured: passwordConfigured, id: item.id, configVersion: item.configVersion + 1, updatedAt: nowText(), status: item.status === 'draft' ? 'ready' : item.status }
         : item,
     );
     const project = updated.find((item) => item.id === id);
@@ -232,6 +308,7 @@ export async function handleProjectsRoute(
 
   if (request.method === 'DELETE' && id) {
     const project = projects.find((item) => item.id === id);
+    await deleteProjectSecrets(id);
     await writeJsonAtomic(dataPath(storagePaths.projects), projects.filter((item) => item.id !== id));
     await appendLog({
       type: '项目日志',

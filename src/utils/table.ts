@@ -8,6 +8,7 @@ export function createIndexColumn<T>(page = 1, pageSize = 10): ColumnsType<T>[nu
     key: '__index',
     width: 72,
     align: 'center',
+    fixed: 'start',
     render: (_value, _record, index) => (page - 1) * pageSize + index + 1
   }
 }

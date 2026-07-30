@@ -1,191 +1,212 @@
-import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Col, Descriptions, Empty, Input, Row, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { agentApi, agentRunApi, modelApi } from '../../src/api';
-import type { AgentRecord, AgentRunRecord, AgentRunStatus, ModelRecord, ProjectRecord } from '../../src/types';
-import { formatDateTimeToSecond } from '../../src/utils/time';
-import type { AgentWorkspaceMode } from '../types';
-
-const runStatusColor: Record<AgentRunStatus, string> = {
-  queued: 'default',
-  running: 'blue',
-  success: 'green',
-  failed: 'red',
-  stopped: 'orange',
-};
-
-const modeDefaults: Record<AgentWorkspaceMode, { title: string; category?: string; input: string }> = {
-  general: {
-    title: 'Agent 任务',
-    input: '请根据当前项目配置，给出下一步可执行的开发建议。',
-  },
-  requirements: {
-    title: '需求分析',
-    category: '需求分析',
-    input: '请基于当前项目介绍和原始需求，生成结构化 PRD、页面功能拆分、角色权限和待确认问题。',
-  },
-  plan: {
-    title: '开发计划',
-    category: '架构设计',
-    input: '请根据当前项目需求，输出整体技术架构、页面开发计划、接口契约、文件拆分策略和执行顺序。',
-  },
-  review: {
-    title: '代码审核',
-    category: '代码审核',
-    input: '请基于当前项目配置，输出代码审核标准、重点风险和后续接入真实代码后的审核清单。',
-  },
-};
+import { EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  Alert,
+  Button,
+  Card,
+  Descriptions,
+  Flex,
+  Input,
+  Modal,
+  Space,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+  message
+} from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { useCallback, useEffect, useState } from 'react'
+import { agentApi } from '../../src/api'
+import type { AgentConfigurationRequest, AgentPlan, AgentPlanItem, ProjectRecord } from '../../src/types'
+import type { AgentWorkspaceMode } from '../types'
 
 type AgentWorkspacePanelProps = {
-  project: ProjectRecord;
-  mode: AgentWorkspaceMode;
-};
+  project: ProjectRecord
+  mode: AgentWorkspaceMode
+}
 
-export function AgentWorkspacePanel({ project, mode }: AgentWorkspacePanelProps) {
-  const [agents, setAgents] = useState<AgentRecord[]>([]);
-  const [models, setModels] = useState<ModelRecord[]>([]);
-  const [runs, setRuns] = useState<AgentRunRecord[]>([]);
-  const [currentRun, setCurrentRun] = useState<AgentRunRecord | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState('');
-  const [taskInput, setTaskInput] = useState(modeDefaults[mode].input);
-  const [loading, setLoading] = useState(false);
-  const [running, setRunning] = useState(false);
+async function openMainAgentConfiguration(request: AgentConfigurationRequest) {
+  if (window.frontendAgent?.requestMainAgentConfiguration) {
+    const result = await window.frontendAgent.requestMainAgentConfiguration(request)
+    if (!result.opened) throw new Error('主客户端当前不可用')
+    return
+  }
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage({ type: 'frontend-agent-open-configuration', request }, window.location.origin)
+    window.opener.focus()
+    return
+  }
+  throw new Error('未找到主客户端，请从主客户端项目中心重新打开当前项目')
+}
 
-  const modeConfig = modeDefaults[mode];
+export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
+  const [plan, setPlan] = useState<AgentPlan | null>(null)
+  const [planning, setPlanning] = useState('')
+  const [selectedPlan, setSelectedPlan] = useState<AgentPlanItem | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [generating, setGenerating] = useState(false)
 
-  const loadData = useCallback(() => {
-    setLoading(true);
-    Promise.all([
-      agentApi.list({ page: 1, pageSize: 100 }),
-      modelApi.list({ page: 1, pageSize: 100 }),
-      agentRunApi.list({ page: 1, pageSize: 20, projectId: project.id }),
-    ])
-      .then(([agentResult, modelResult, runResult]) => {
-        setAgents(agentResult.list);
-        setModels(modelResult.list);
-        setRuns(runResult.list);
-        setCurrentRun(runResult.list[0] ?? null);
-        const preferred = modeConfig.category ? agentResult.list.find((item) => item.category === modeConfig.category) : agentResult.list[0];
-        setSelectedAgentId((value) => value || preferred?.id || '');
+  const loadPlan = useCallback(() => {
+    setLoading(true)
+    agentApi
+      .plan(project.id)
+      .then((result) => {
+        setPlan(result)
+        setPlanning(result.planning)
       })
       .catch((error: Error) => message.error(error.message))
-      .finally(() => setLoading(false));
-  }, [modeConfig.category, project.id]);
+      .finally(() => setLoading(false))
+  }, [project.id])
 
-  useEffect(() => {
-    setTaskInput(modeDefaults[mode].input);
-    setSelectedAgentId('');
-  }, [mode]);
+  useEffect(() => loadPlan(), [loadPlan])
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const selectedAgent = useMemo(() => agents.find((item) => item.id === selectedAgentId), [agents, selectedAgentId]);
-  const selectedModel = useMemo(() => {
-    if (!selectedAgent) return null;
-    return models.find((item) => item.name === selectedAgent.modelName) ?? models.find((item) => item.provider === 'Ollama') ?? null;
-  }, [models, selectedAgent]);
-
-  const startRun = () => {
-    if (!selectedAgentId) {
-      message.warning('请选择 Agent');
-      return;
+  const regeneratePlan = async () => {
+    if (!planning.trim()) {
+      message.warning('请先填写开发规划')
+      return
     }
-    if (!taskInput.trim()) {
-      message.warning('请输入任务说明');
-      return;
+    setGenerating(true)
+    try {
+      const result = await agentApi.regeneratePlan(project.id, planning.trim())
+      setPlan(result)
+      setPlanning(result.planning)
+      message.success('已根据当前规划重新生成 Agent 清单')
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setGenerating(false)
     }
-    setRunning(true);
-    agentRunApi
-      .start({ projectId: project.id, agentId: selectedAgentId, input: taskInput.trim() })
-      .then((run) => {
-        setCurrentRun(run);
-        message[run.status === 'success' ? 'success' : 'error'](run.status === 'success' ? 'Agent 执行完成' : 'Agent 执行失败');
-        loadData();
-      })
-      .catch((error: Error) => message.error(error.message))
-      .finally(() => setRunning(false));
-  };
+  }
 
-  const columns: ColumnsType<AgentRunRecord> = [
-    { title: 'Agent', dataIndex: 'agentName', width: 150 },
-    { title: '模型', dataIndex: 'modelId', width: 180 },
-    { title: '状态', dataIndex: 'status', width: 90, render: (value: AgentRunStatus) => <Tag color={runStatusColor[value]}>{value}</Tag> },
-    { title: '开始时间', dataIndex: 'startedAt', width: 170, render: formatDateTimeToSecond },
-    { title: '结束时间', dataIndex: 'endedAt', width: 170, render: formatDateTimeToSecond },
+  const configureAgent = async (item: AgentPlanItem) => {
+    try {
+      await openMainAgentConfiguration(
+        item.agent
+          ? { mode: 'edit', agentId: item.agent.id, task: item.task }
+          : { mode: 'create', draft: item.proposedAgent, task: item.task }
+      )
+      message.success(item.agent ? '已在主客户端打开 Agent 编辑' : '已在主客户端生成 Agent 配置草稿')
+    } catch (error) {
+      message.error((error as Error).message)
+    }
+  }
+
+  const columns: ColumnsType<AgentPlanItem> = [
+    { title: '序号', width: 64, align: 'center', render: (_value, _item, index) => index + 1 },
+    { title: '所需 Agent', dataIndex: 'name', width: 160, ellipsis: true },
+    { title: '类型', dataIndex: 'category', width: 110, ellipsis: true },
+    {
+      title: '状态',
+      width: 105,
+      render: (_, item) => (
+        <Tag color={item.available ? 'success' : 'warning'}>{item.available ? '已就绪' : '缺少 Agent'}</Tag>
+      )
+    },
+    { title: '实际 Agent', width: 160, ellipsis: true, render: (_, item) => item.agent?.name ?? '-' },
+    { title: '本次开发任务', dataIndex: 'task', ellipsis: true },
     {
       title: '操作',
-      width: 90,
-      render: (_, run) => (
-        <Button type="link" onClick={() => setCurrentRun(run)}>
-          查看
-        </Button>
-      ),
-    },
-  ];
+      width: 250,
+      render: (_, item) => (
+        <Space size={4}>
+          <Button type="link" icon={<EyeOutlined />} onClick={() => setSelectedPlan(item)}>
+            查看
+          </Button>
+          <Button
+            type="link"
+            icon={item.agent ? <EditOutlined /> : <PlusOutlined />}
+            onClick={() => void configureAgent(item)}>
+            {item.agent ? '主客户端编辑' : '一键创建'}
+          </Button>
+        </Space>
+      )
+    }
+  ]
 
   return (
     <Spin spinning={loading}>
-      <Space direction="vertical" size={16} className="full-width">
-        <Card title={modeConfig.title}>
-          <Row gutter={16}>
-            <Col span={8}>
-              <Space direction="vertical" size={12} className="full-width">
-                <Select
-                  placeholder="选择 Agent"
-                  value={selectedAgentId || undefined}
-                  onChange={setSelectedAgentId}
-                  options={agents.map((item) => ({ label: `${item.name} / ${item.category}`, value: item.id }))}
-                />
-                <Descriptions bordered size="small" column={1}>
-                  <Descriptions.Item label="默认模型">{selectedAgent?.modelName || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="实际模型">{selectedModel?.modelId || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="风险等级">{selectedAgent?.risk || '-'}</Descriptions.Item>
-                </Descriptions>
-              </Space>
-            </Col>
-            <Col span={16}>
-              <Space direction="vertical" size={12} className="full-width">
-                <Input.TextArea value={taskInput} onChange={(event) => setTaskInput(event.target.value)} rows={6} />
-                <Space>
-                  <Button type="primary" icon={<PlayCircleOutlined />} loading={running} onClick={startRun}>
-                    执行 Agent
-                  </Button>
-                  <Button icon={<ReloadOutlined />} onClick={loadData}>
-                    刷新
-                  </Button>
-                </Space>
-              </Space>
-            </Col>
-          </Row>
+      <Flex vertical gap={16}>
+        <Card
+          title="Agent 任务规划"
+          extra={
+            <Button type="primary" icon={<ReloadOutlined />} loading={generating} onClick={() => void regeneratePlan()}>
+              按规划生成 Agent 清单
+            </Button>
+          }>
+          <Typography.Title level={5}>开发规划</Typography.Title>
+          <Input.TextArea
+            value={planning}
+            onChange={(event) => setPlanning(event.target.value)}
+            rows={5}
+            maxLength={10000}
+            showCount
+            placeholder="根据项目需求描述本次开发范围、阶段、需要或不需要的能力"
+          />
+          <Alert
+            style={{ marginTop: 16 }}
+            type={plan?.items.some((item) => !item.available) ? 'warning' : 'success'}
+            showIcon
+            message={plan?.summary ?? '正在生成 Agent 规划'}
+            description={
+              plan?.items.some((item) => !item.available)
+                ? '缺失的专项 Agent 需要前往主客户端创建。创建完成后再次生成清单即可，无需重启子客户端。'
+                : undefined
+            }
+          />
         </Card>
 
-        <Card title="执行记录">
-          <Table columns={columns} dataSource={runs} rowKey="id" pagination={false} scroll={{ x: 'max-content' }} />
+        <Card title="专项 Agent 分配">
+          <Table columns={columns} dataSource={plan?.items ?? []} rowKey="key" pagination={false} tableLayout="fixed" />
         </Card>
 
-        <Card title="执行结果">
-          {currentRun ? (
-            <Space direction="vertical" size={12} className="full-width">
-              <Descriptions bordered size="small" column={3}>
-                <Descriptions.Item label="Agent">{currentRun.agentName}</Descriptions.Item>
-                <Descriptions.Item label="模型">{currentRun.modelId}</Descriptions.Item>
-                <Descriptions.Item label="状态">
-                  <Tag color={runStatusColor[currentRun.status]}>{currentRun.status}</Tag>
-                </Descriptions.Item>
-              </Descriptions>
-              {currentRun.error ? <Alert type="error" showIcon message={currentRun.error} /> : null}
-              <Typography.Paragraph>
-                <pre className="task-log-view">{currentRun.output || currentRun.input}</pre>
-              </Typography.Paragraph>
-            </Space>
-          ) : (
-            <Empty description="暂无执行结果" />
-          )}
-        </Card>
-      </Space>
+        <Modal
+          title={selectedPlan?.name ? `${selectedPlan.name}详情` : 'Agent 详情'}
+          open={Boolean(selectedPlan)}
+          centered
+          destroyOnHidden
+          maskClosable={false}
+          onCancel={() => setSelectedPlan(null)}
+          footer={(_, { CancelBtn }) => <CancelBtn />}
+          width={820}
+          styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}>
+          {selectedPlan ? (
+            <Descriptions bordered column={2} size="small">
+              <Descriptions.Item label="类型">{selectedPlan.category}</Descriptions.Item>
+              <Descriptions.Item label="状态">{selectedPlan.available ? '已就绪' : '缺少 Agent'}</Descriptions.Item>
+              <Descriptions.Item label="本次任务" span={2}>
+                {selectedPlan.task}
+              </Descriptions.Item>
+              <Descriptions.Item label="职责" span={2}>
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).description}
+              </Descriptions.Item>
+              <Descriptions.Item label="默认模型">
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).modelName || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="风险等级">
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).risk}
+              </Descriptions.Item>
+              <Descriptions.Item label="角色 Prompt" span={2}>
+                <Typography.Paragraph>{(selectedPlan.agent ?? selectedPlan.proposedAgent).prompt}</Typography.Paragraph>
+              </Descriptions.Item>
+              <Descriptions.Item label="工具权限" span={2}>
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).permissions.join('、')}
+              </Descriptions.Item>
+              <Descriptions.Item label="审批规则" span={2}>
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).approvalRules.join('、')}
+              </Descriptions.Item>
+              <Descriptions.Item label="上下文规则" span={2}>
+                {((selectedPlan.agent ?? selectedPlan.proposedAgent).contextRules ?? []).join('、')}
+              </Descriptions.Item>
+              <Descriptions.Item label="输出规范" span={2}>
+                {(selectedPlan.agent ?? selectedPlan.proposedAgent).outputFormat || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="质量门禁" span={2}>
+                {((selectedPlan.agent ?? selectedPlan.proposedAgent).qualityGates ?? []).join('、')}
+              </Descriptions.Item>
+            </Descriptions>
+          ) : null}
+        </Modal>
+      </Flex>
     </Spin>
-  );
+  )
 }

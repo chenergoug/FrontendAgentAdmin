@@ -1,8 +1,8 @@
-import { CheckCircleOutlined, PlayCircleOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Descriptions, Flex, Input, Modal, Space, Spin, Steps, Switch, Tag, Typography, message } from 'antd';
+import { CheckCircleOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Collapse, Descriptions, Flex, Input, Modal, Space, Spin, Steps, Switch, Table, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fileChangeApi, workflowApi } from '../../src/api';
-import type { ProjectRecord, WorkflowCapabilityReport, WorkflowSnapshot, WorkflowStageKey, WorkflowStageStatus } from '../../src/types';
+import type { ProjectRecord, WorkflowCapabilityReport, WorkflowHistoryRecord, WorkflowSnapshot, WorkflowStageKey, WorkflowStageStatus } from '../../src/types';
 import { formatDateTimeToSecond } from '../../src/utils/time';
 
 const statusMeta: Record<WorkflowStageStatus, { color: string; text: string }> = {
@@ -28,23 +28,60 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   const [executing, setExecuting] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<WorkflowCapabilityReport | null>(null);
+  const [rerunStageKey, setRerunStageKey] = useState<WorkflowStageKey | null>(null);
+  const [rerunReason, setRerunReason] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history, setHistory] = useState<WorkflowHistoryRecord[]>([]);
+  const [selectedHistory, setSelectedHistory] = useState<WorkflowHistoryRecord | null>(null);
 
   const loadWorkflow = useCallback((silent = false) => {
     if (!silent) setLoading(true);
-    Promise.all([workflowApi.detail(project.id), workflowApi.capabilities(project.id)])
-      .then(([snapshot, report]) => { setWorkflow(snapshot); setCapabilities(report); })
+    return Promise.all([workflowApi.detail(project.id), workflowApi.capabilities(project.id)])
+      .then(([snapshot, report]) => {
+        setWorkflow(snapshot);
+        setCapabilities(report);
+        if (silent && !snapshot.stages.some((stage) => stage.status === 'running')) setExecuting(false);
+        return snapshot;
+      })
       .catch((error: Error) => message.error(error.message))
       .finally(() => !silent && setLoading(false));
   }, [project.id]);
 
-  useEffect(() => loadWorkflow(), [loadWorkflow]);
+  useEffect(() => { void loadWorkflow(); }, [loadWorkflow]);
   useEffect(() => setSelectedKey(initialStage), [initialStage]);
+
+  useEffect(() => {
+    const hasRunningStage = workflow?.stages.some((stage) => stage.status === 'running') ?? false;
+    if (!executing && !hasRunningStage) return;
+    const timer = window.setInterval(() => {
+      void loadWorkflow(true);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [executing, loadWorkflow, workflow?.stages]);
 
   const selectedStage = useMemo(() => workflow?.stages.find((item) => item.key === selectedKey) ?? null, [selectedKey, workflow]);
   useEffect(() => {
     setInput(selectedStage?.input ?? '');
     setArtifact(selectedStage?.output ?? '');
   }, [selectedStage?.input, selectedStage?.output, selectedStage?.key]);
+
+  const runAutoSequence = useCallback(async (initial: WorkflowSnapshot) => {
+    let current = initial;
+    while (current.autoMode) {
+      const activeIndex = current.stages.findIndex((item) => item.key === current.activeStage);
+      const activeStage = current.stages[activeIndex];
+      if (!activeStage || ['review', 'failed', 'running'].includes(activeStage.status)) break;
+      const nextStage = activeStage.status === 'pending' ? activeStage : current.stages[activeIndex + 1];
+      if (!nextStage) break;
+      setSelectedKey(nextStage.key);
+      current = await workflowApi.run(project.id, nextStage.key);
+      setWorkflow(current);
+      const completedStage = current.stages.find((item) => item.key === nextStage.key);
+      if (!completedStage || ['review', 'failed', 'running'].includes(completedStage.status)) break;
+    }
+    return current;
+  }, [project.id]);
 
   const approve = useCallback(async (continueAutomatically = false) => {
     if (!workflow || !selectedStage) return;
@@ -59,16 +96,14 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       setCountdown(null);
       message.success(`${selectedStage.title}已确认`);
       if (continueAutomatically && approved.activeStage !== selectedStage.key) {
-        const next = await workflowApi.run(project.id, approved.activeStage);
-        setWorkflow(next);
-        setSelectedKey(next.activeStage);
+        await runAutoSequence(approved);
       }
     } catch (error) {
       message.error((error as Error).message);
     } finally {
       setExecuting(false);
     }
-  }, [artifact, project.id, selectedStage, workflow]);
+  }, [artifact, project.id, runAutoSequence, selectedStage, workflow]);
 
   useEffect(() => {
     if (!workflow?.autoMode || selectedStage?.status !== 'review') {
@@ -90,6 +125,22 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
     return () => window.clearInterval(timer);
   }, [approve, selectedStage?.key, selectedStage?.status, workflow?.autoApproveSeconds, workflow?.autoMode]);
 
+  const executeStage = async (stageKey: WorkflowStageKey, taskInput?: string) => {
+    setExecuting(true);
+    try {
+      const result = await workflowApi.run(project.id, stageKey, taskInput?.trim() || undefined);
+      setWorkflow(result);
+      const stage = result.stages.find((item) => item.key === stageKey);
+      message[stage?.status === 'failed' ? 'error' : 'success'](stage?.status === 'failed' ? stage.error : `${stage?.title}执行完成`);
+      if (result.autoMode) await runAutoSequence(result);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      await loadWorkflow(true);
+      setExecuting(false);
+    }
+  };
+
   const runStage = async () => {
     if (!selectedStage) return;
     const capability = capabilities?.stages.find((item) => item.stageKey === selectedStage.key);
@@ -100,16 +151,48 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       });
       return;
     }
+    if (selectedStage.output || ['approved', 'review'].includes(selectedStage.status)) {
+      setRerunStageKey(selectedStage.key);
+      setRerunReason('');
+      return;
+    }
+    await executeStage(selectedStage.key, input);
+  };
+
+  const confirmRerun = async () => {
+    if (!workflow || !rerunStageKey || !rerunReason.trim()) {
+      message.warning('请填写重新执行原因');
+      return;
+    }
     setExecuting(true);
     try {
-      const result = await workflowApi.run(project.id, selectedStage.key, input.trim() || undefined);
+      const prepared = await workflowApi.prepareRerun(project.id, rerunStageKey, rerunReason.trim());
+      setWorkflow(prepared);
+      setSelectedKey(rerunStageKey);
+      setRerunStageKey(null);
+      setRerunReason('');
+      const result = await workflowApi.run(project.id, rerunStageKey, input.trim() || undefined);
       setWorkflow(result);
-      const stage = result.stages.find((item) => item.key === selectedStage.key);
-      message[stage?.status === 'failed' ? 'error' : 'success'](stage?.status === 'failed' ? stage.error : `${stage?.title}执行完成`);
+      if (result.autoMode) await runAutoSequence(result);
+      message.success(`已创建工作流 v${prepared.version} 并开始重新执行`);
     } catch (error) {
       message.error((error as Error).message);
     } finally {
+      await loadWorkflow(true);
       setExecuting(false);
+    }
+  };
+
+  const openHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const result = await workflowApi.history(project.id);
+      setHistory(result.list);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -165,6 +248,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   if (!workflow || !selectedStage) return <Spin spinning={loading} />;
   const selectedStatus = statusMeta[selectedStage.status];
   const selectedCapability = capabilities?.stages.find((item) => item.stageKey === selectedStage.key);
+  const stageIsRunning = executing || selectedStage.status === 'running';
 
   return (
     <Spin spinning={loading || executing}>
@@ -189,8 +273,9 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
             </div>
             <Space>
               <Typography.Text>自动执行</Typography.Text>
-              <Switch checked={workflow.autoMode} onChange={async (checked) => setWorkflow(await workflowApi.setMode(project.id, checked))} />
-              <Button icon={<ReloadOutlined />} onClick={() => loadWorkflow()}>刷新</Button>
+              <Switch disabled={stageIsRunning} checked={workflow.autoMode} onChange={async (checked) => setWorkflow(await workflowApi.setMode(project.id, checked))} />
+              <Button disabled={stageIsRunning} icon={<HistoryOutlined />} onClick={() => void openHistory()}>历史版本</Button>
+              <Button disabled={stageIsRunning} icon={<ReloadOutlined />} onClick={() => loadWorkflow()}>刷新</Button>
             </Space>
           </Flex>
         </Card>
@@ -204,24 +289,84 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
         <Card title={selectedStage.title} extra={<Tag color={selectedStatus.color}>{selectedStatus.text}</Tag>}>
           <Descriptions size="small" bordered column={3}>
             <Descriptions.Item label="执行 Agent">{selectedStage.agentId}</Descriptions.Item>
+            <Descriptions.Item label="工作流版本">v{workflow.version ?? 1}</Descriptions.Item>
             <Descriptions.Item label="更新时间">{formatDateTimeToSecond(selectedStage.updatedAt)}</Descriptions.Item>
-            <Descriptions.Item label="确认时间">{formatDateTimeToSecond(selectedStage.confirmedAt)}</Descriptions.Item>
+            <Descriptions.Item label="确认时间" span={3}>{formatDateTimeToSecond(selectedStage.confirmedAt)}</Descriptions.Item>
           </Descriptions>
           <Typography.Title level={5}>任务输入</Typography.Title>
           <Input.TextArea rows={4} value={input} onChange={(event) => setInput(event.target.value)} />
           <Space style={{ marginTop: 12 }}>
-            <Button type="primary" icon={<PlayCircleOutlined />} onClick={runStage}>执行当前节点</Button>
+            <Button type="primary" icon={<PlayCircleOutlined />} loading={stageIsRunning} disabled={stageIsRunning} onClick={runStage}>
+              {stageIsRunning ? '执行中' : '执行当前节点'}
+            </Button>
           </Space>
           {selectedStage.error ? <Alert style={{ marginTop: 16 }} type="error" showIcon message={selectedStage.error} /> : null}
           <Typography.Title level={5}>节点产物</Typography.Title>
           <Input.TextArea rows={16} value={artifact} onChange={(event) => setArtifact(event.target.value)} placeholder="执行完成后将在此生成可编辑产物" />
           <Space style={{ marginTop: 12 }}>
-            <Button icon={<SaveOutlined />} disabled={!artifact.trim()} onClick={saveArtifact}>保存修改</Button>
-            <Button type="primary" icon={<CheckCircleOutlined />} disabled={!artifact.trim()} onClick={() => approve(false)}>确认并进入下一步</Button>
-            {['review', 'debug'].includes(selectedStage.key) ? <Button disabled={!artifact.trim()} onClick={generateRepair}>生成修复变更</Button> : null}
-            {selectedStage.key === 'docs' ? <Button disabled={!artifact.trim()} onClick={generateDocumentation}>生成项目文档</Button> : null}
+            <Button icon={<SaveOutlined />} disabled={stageIsRunning || !artifact.trim()} onClick={saveArtifact}>保存修改</Button>
+            <Button type="primary" icon={<CheckCircleOutlined />} disabled={stageIsRunning || !artifact.trim()} onClick={() => approve(false)}>确认并进入下一步</Button>
+            {['review', 'debug'].includes(selectedStage.key) ? <Button disabled={stageIsRunning || !artifact.trim()} onClick={generateRepair}>生成修复变更</Button> : null}
+            {selectedStage.key === 'docs' ? <Button disabled={stageIsRunning || !artifact.trim()} onClick={generateDocumentation}>生成项目文档</Button> : null}
           </Space>
         </Card>
+
+        <Modal
+          title="重新执行工作流节点"
+          open={Boolean(rerunStageKey)}
+          centered
+          maskClosable={false}
+          okText="归档并重新执行"
+          cancelText="取消"
+          confirmLoading={executing}
+          onOk={() => void confirmRerun()}
+          onCancel={() => { setRerunStageKey(null); setRerunReason(''); }}
+        >
+          <Alert
+            type="warning"
+            showIcon
+            message={workflow.stages.every((stage) => stage.status === 'approved') ? '当前工作流已经全部完成' : '当前节点已有执行结果'}
+            description={`继续执行将归档当前 v${workflow.version ?? 1}，并重置“${workflow.stages.find((stage) => stage.key === rerunStageKey)?.title ?? '-'}”及其后续节点。原产物不会删除。${workflow.autoMode ? '自动执行已开启，确认后将继续推进后续流程。' : ''}`}
+          />
+          <Typography.Title level={5}>重新执行原因</Typography.Title>
+          <Input.TextArea value={rerunReason} onChange={(event) => setRerunReason(event.target.value)} rows={4} maxLength={1000} showCount placeholder="说明需求变化、修复原因或重新生成目标" />
+        </Modal>
+
+        <Modal title="工作流历史版本" open={historyOpen} centered width={960} footer={null} onCancel={() => setHistoryOpen(false)}>
+          <Table
+            loading={historyLoading}
+            dataSource={history}
+            rowKey="historyId"
+            pagination={false}
+            columns={[
+              { title: '版本', width: 90, render: (_, item) => `v${item.version ?? 1}` },
+              { title: '归档时间', dataIndex: 'archivedAt', width: 180, render: formatDateTimeToSecond },
+              { title: '重跑起点', dataIndex: 'rerunFrom', width: 130, render: (key: WorkflowStageKey, item) => item.stages.find((stage) => stage.key === key)?.title ?? key },
+              { title: '重新执行原因', dataIndex: 'rerunReason', ellipsis: true },
+              { title: '操作', width: 90, render: (_, item) => <Button type="link" onClick={() => setSelectedHistory(item)}>查看</Button> },
+            ]}
+          />
+        </Modal>
+
+        <Modal title={`历史工作流 v${selectedHistory?.version ?? 1}`} open={Boolean(selectedHistory)} centered width={900} footer={null} onCancel={() => setSelectedHistory(null)}>
+          {selectedHistory ? (
+            <>
+              <Descriptions bordered size="small" column={2}>
+                <Descriptions.Item label="归档时间">{formatDateTimeToSecond(selectedHistory.archivedAt)}</Descriptions.Item>
+                <Descriptions.Item label="重跑起点">{selectedHistory.stages.find((stage) => stage.key === selectedHistory.rerunFrom)?.title ?? selectedHistory.rerunFrom}</Descriptions.Item>
+                <Descriptions.Item label="重新执行原因" span={2}>{selectedHistory.rerunReason}</Descriptions.Item>
+              </Descriptions>
+              <Collapse
+                style={{ marginTop: 16 }}
+                items={selectedHistory.stages.map((stage) => ({
+                  key: stage.key,
+                  label: <Space><span>{stage.title}</span><Tag color={statusMeta[stage.status].color}>{statusMeta[stage.status].text}</Tag></Space>,
+                  children: <pre className="task-log-view">{stage.output || '该节点没有归档产物'}</pre>,
+                }))}
+              />
+            </>
+          ) : null}
+        </Modal>
       </Flex>
     </Spin>
   );

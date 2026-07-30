@@ -83,6 +83,16 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
     if (!projectShapes.has(String(item.shape))) errors.push(`第 ${index + 1} 条项目形态不合法`);
     if (!projectDeviceTypes.has(String(item.deviceType))) errors.push(`第 ${index + 1} 条项目类型不合法`);
     if (!isString(item.rootPath, 1000)) errors.push(`第 ${index + 1} 条项目路径不能为空`);
+    if (!isOptionalString(item.serverFramework, 100)) errors.push(`第 ${index + 1} 条服务端技术栈过长`);
+    if (!isOptionalString(item.serverRootPath, 1000)) errors.push(`第 ${index + 1} 条服务端目录过长`);
+    if (!isOptionalString(item.serverDevCommand, 500)) errors.push(`第 ${index + 1} 条服务端运行命令过长`);
+    if (!isOptionalString(item.serverBuildCommand, 500)) errors.push(`第 ${index + 1} 条服务端构建命令过长`);
+    if (!isOptionalString(item.serverTestCommand, 500)) errors.push(`第 ${index + 1} 条服务端测试命令过长`);
+    if (!isOptionalString(item.databaseType, 100)) errors.push(`第 ${index + 1} 条数据库类型过长`);
+    if (!isOptionalString(item.databaseHost, 500)) errors.push(`第 ${index + 1} 条数据库主机过长`);
+    if (!isOptionalString(item.databasePort, 10)) errors.push(`第 ${index + 1} 条数据库端口不合法`);
+    if (!isOptionalString(item.databaseName, 200)) errors.push(`第 ${index + 1} 条数据库名称过长`);
+    if (!isOptionalString(item.databaseUsername, 200)) errors.push(`第 ${index + 1} 条数据库账号过长`);
     if (!validUrl(item.gitRemote, false)) errors.push(`第 ${index + 1} 条 Git 地址格式不合法`);
     if (!validUrl(item.serverUrl, false)) errors.push(`第 ${index + 1} 条服务器地址格式不合法`);
     if (item.status && !projectStatuses.has(item.status)) errors.push(`第 ${index + 1} 条项目状态不合法`);
@@ -98,6 +108,17 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
       deviceType: String(item.deviceType ?? ''),
       businessType: String(item.businessType ?? ''),
       rootPath: String(item.rootPath ?? ''),
+      serverFramework: String(item.serverFramework ?? ''),
+      serverRootPath: String(item.serverRootPath ?? ''),
+      serverDevCommand: String(item.serverDevCommand ?? ''),
+      serverBuildCommand: String(item.serverBuildCommand ?? ''),
+      serverTestCommand: String(item.serverTestCommand ?? ''),
+      databaseType: String(item.databaseType ?? ''),
+      databaseHost: String(item.databaseHost ?? ''),
+      databasePort: String(item.databasePort ?? ''),
+      databaseName: String(item.databaseName ?? ''),
+      databaseUsername: String(item.databaseUsername ?? ''),
+      databasePasswordConfigured: false,
       gitRemote: String(item.gitRemote ?? ''),
       branch: String(item.branch ?? 'develop'),
       serverUrl: String(item.serverUrl ?? ''),
@@ -164,12 +185,16 @@ export function normalizeAgentsImport(body: ImportBody<Partial<AgentRecord>>) {
     }
     if (!isString(item.name, 100)) errors.push(`第 ${index + 1} 条 Agent 名称不能为空且不能超过 100 字`);
     if (!isString(item.category, 100)) errors.push(`第 ${index + 1} 条 Agent 类型不能为空`);
+    if (item.category === '主调度' || /总调度/.test(String(item.name ?? ''))) errors.push(`第 ${index + 1} 条主调度是平台内置机制，不能导入为 Agent`);
     if (!isString(item.modelName, 100)) errors.push(`第 ${index + 1} 条默认模型不能为空`);
     if (!riskLevels.has(String(item.risk))) errors.push(`第 ${index + 1} 条风险等级不合法`);
     if (!isOptionalString(item.description, 2000)) errors.push(`第 ${index + 1} 条职责描述过长`);
     if (!isString(item.prompt, 20000)) errors.push(`第 ${index + 1} 条 Prompt 不能为空且不能超过 20000 字`);
     if (!validStringArray(item.permissions)) errors.push(`第 ${index + 1} 条权限必须是字符串数组`);
     if (!validStringArray(item.approvalRules)) errors.push(`第 ${index + 1} 条审批规则必须是字符串数组`);
+    if (!validStringArray(item.contextRules)) errors.push(`第 ${index + 1} 条上下文规则必须是字符串数组`);
+    if (!isString(item.outputFormat, 10000)) errors.push(`第 ${index + 1} 条输出规范不能为空且不能超过 10000 字`);
+    if (!validStringArray(item.qualityGates)) errors.push(`第 ${index + 1} 条质量门禁必须是字符串数组`);
 
     return {
       id: isOptionalString(item.id, 100) && item.id ? item.id : `a-${randomUUID()}`,
@@ -182,6 +207,9 @@ export function normalizeAgentsImport(body: ImportBody<Partial<AgentRecord>>) {
       prompt: String(item.prompt ?? ''),
       permissions: Array.isArray(item.permissions) ? item.permissions.map(String) : [],
       approvalRules: Array.isArray(item.approvalRules) ? item.approvalRules.map(String) : [],
+      contextRules: Array.isArray(item.contextRules) ? item.contextRules.map(String) : [],
+      outputFormat: String(item.outputFormat ?? ''),
+      qualityGates: Array.isArray(item.qualityGates) ? item.qualityGates.map(String) : [],
     };
   });
 

@@ -61,6 +61,14 @@ async function buildPrompt(project: ProjectRecord, input: string, structured = f
     `业务类型：${project.businessType || '-'}`,
     `Git 地址：${project.gitRemote || '-'}`,
     `服务器地址：${project.serverUrl || '-'}`,
+    `服务端技术栈：${project.serverFramework || '-'}`,
+    `服务端目录：${project.serverRootPath || '-'}`,
+    `服务端运行命令：${project.serverDevCommand || '-'}`,
+    `服务端构建命令：${project.serverBuildCommand || '-'}`,
+    `服务端测试命令：${project.serverTestCommand || '-'}`,
+    `数据库：${project.databaseType || '-'} / ${project.databaseHost || '-'}:${project.databasePort || '-'} / ${project.databaseName || '-'}`,
+    `数据库账号：${project.databaseUsername || '-'}`,
+    `数据库密码：${project.databasePasswordConfigured ? '已安全配置，不向 Agent 明文暴露' : '未配置'}`,
     `项目介绍：${project.description || '-'}`,
     `原始需求：${project.requirement || '-'}`,
     '当前文件概况：',
@@ -91,23 +99,50 @@ function pickModel(models: ModelRecord[], agent: AgentRecord) {
 export async function ensureDefaultAgents(modelName: string) {
   const agents = await readJson<AgentRecord[]>(storagePaths.agents, []);
   const defaults = createDefaultAgents(modelName);
-  const existingNames = new Set(agents.map((item) => item.name));
-  const missing = defaults.filter((item) => !existingNames.has(item.name));
-  if (missing.length === 0) {
-    return { created: 0, total: agents.length };
-  }
-
-  const merged = [...missing, ...agents];
+  const defaultIds = new Set(defaults.map((item) => item.id));
+  const defaultNames = new Set(defaults.map((item) => item.name));
+  const matchedIds = new Set<string>();
+  let updated = 0;
+  const synchronized = agents.map((agent) => {
+    const preset = defaults.find((item) => item.id === agent.id || item.name === agent.name);
+    if (!preset) return agent;
+    matchedIds.add(preset.id);
+    const next: AgentRecord = {
+      ...agent,
+      id: preset.id,
+      name: preset.name,
+      category: preset.category,
+      description: preset.description,
+      prompt: preset.prompt,
+      permissions: preset.permissions,
+      approvalRules: preset.approvalRules,
+      contextRules: preset.contextRules,
+      outputFormat: preset.outputFormat,
+      qualityGates: preset.qualityGates,
+      modelName: agent.modelName || modelName,
+      enabled: agent.enabled,
+    };
+    if (JSON.stringify(next) !== JSON.stringify(agent)) updated += 1;
+    return next;
+  });
+  const missing = defaults.filter((item) => !matchedIds.has(item.id));
+  const customAgents = synchronized.filter(
+    (agent) => !defaultIds.has(agent.id) && !defaultNames.has(agent.name),
+  );
+  const synchronizedDefaults = defaults.map(
+    (preset) => synchronized.find((agent) => agent.id === preset.id) ?? preset,
+  );
+  const merged = [...synchronizedDefaults, ...customAgents];
   await writeJsonAtomic(dataPath(storagePaths.agents), merged);
-  await Promise.all(missing.map(writeAgentFiles));
+  await Promise.all(merged.map(writeAgentFiles));
   await appendLog({
     type: '系统日志',
     level: 'info',
     projectName: '全局',
-    title: '默认 Agent 已初始化',
-    detail: `新增 ${missing.length} 个默认 Agent`,
+    title: '默认 Agent 已同步',
+    detail: `新增 ${missing.length} 个，更新 ${updated} 个默认 Agent`,
   });
-  return { created: missing.length, total: merged.length };
+  return { created: missing.length, updated, total: merged.length };
 }
 
 export async function listAgentRuns(projectId?: string) {
@@ -169,7 +204,12 @@ export async function startAgentRun(input: StartAgentRunInput) {
     const result = await generateWithOllama({
       baseUrl: model.baseUrl,
       modelId: model.modelId,
-      system: agent.prompt,
+      system: [
+        agent.prompt,
+        `上下文使用规则：\n${(agent.contextRules ?? []).map((item) => `- ${item}`).join('\n') || '- 仅使用当前任务提供的可靠上下文。'}`,
+        `输出规范：\n${agent.outputFormat || '输出清晰、可执行的结构化结果。'}`,
+        `质量门禁：\n${(agent.qualityGates ?? []).map((item) => `- ${item}`).join('\n') || '- 输出前检查事实、完整性和风险。'}`,
+      ].join('\n\n'),
       prompt: await buildPrompt(project, input.input, input.structured, ['前端开发', '后端开发', '代码审核', '调试修复', '测试构建'].includes(agent.category)),
       contextWindow: model.contextWindow,
       timeoutSeconds: model.timeout,
