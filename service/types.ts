@@ -152,7 +152,7 @@ export type AgentRunLog = {
 };
 
 export type WorkflowStageKey = 'requirements' | 'architecture' | 'planning' | 'frontend' | 'backend' | 'review' | 'debug' | 'test' | 'docs';
-export type WorkflowStageStatus = 'pending' | 'running' | 'review' | 'approved' | 'failed';
+export type WorkflowStageStatus = 'pending' | 'running' | 'review' | 'approved' | 'failed' | 'stopped';
 
 export type WorkflowStageRecord = {
   key: WorkflowStageKey;
@@ -164,6 +164,10 @@ export type WorkflowStageRecord = {
   runId: string;
   error: string;
   requiresApproval: boolean;
+  startedAt?: string;
+  timeoutSeconds?: number;
+  progress?: string;
+  progressLog?: string[];
   updatedAt: string;
   confirmedAt: string;
 };

@@ -7,7 +7,7 @@ import { startAgentRun } from './agent-runtime.js';
 import { readProjectFileTree } from './project-files.js';
 import { dataPath, readJson, writeJsonAtomic } from './storage.js';
 import type { FileChangeAction, FileChangeItem, FileChangeSet, ProjectFileNode, ProjectRecord } from './types.js';
-import { createBasicAdminTemplate, createDroneReactTemplate } from './project-templates.js';
+import { createBasicAdminTemplate, createDroneReactTemplate, createVueExpressMysqlBackendTemplate, createVueExpressMysqlTemplate } from './project-templates.js';
 
 const blockedPaths = new Set(['.env', '.env.local', '.git/config', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
 const maxFiles = 100;
@@ -18,14 +18,45 @@ function containsProjectFile(nodes: ProjectFileNode[]): boolean {
   return nodes.some((node) => node.type === 'file' || containsProjectFile(node.children ?? []));
 }
 
-type GeneratedPayload = { summary?: string; files?: Array<{ path?: string; action?: FileChangeAction; content?: unknown }> };
+type RawGeneratedFile = { path?: string; filePath?: string; filepath?: string; name?: string; action?: FileChangeAction; content?: unknown };
+type GeneratedPayload = { summary?: string; files?: unknown[] };
 
 function normalizeRelativePath(value: string) {
   const source = value.replaceAll('\\', '/').replace(/^\.\//, '');
   const normalized = ['.env', '.env.local'].includes(source.toLowerCase()) ? '.env.example' : source;
-  if (!normalized || path.posix.isAbsolute(normalized) || normalized.split('/').includes('..')) throw new Error(`不安全的文件路径：${value}`);
+  if (!normalized) throw new Error('模型返回的文件变更缺少 path 字段，请重新生成当前节点');
+  if (path.posix.isAbsolute(normalized) || normalized.split('/').includes('..')) throw new Error(`不安全的文件路径：${value}`);
   if (blockedPaths.has(normalized.toLowerCase()) || normalized.startsWith('.git/')) throw new Error(`禁止修改敏感文件：${normalized}`);
   return normalized;
+}
+
+function normalizeGeneratedFiles(value: unknown[]): RawGeneratedFile[] {
+  const files: RawGeneratedFile[] = [];
+  let pending: Record<string, unknown> | null = null;
+  for (let index = 0; index < value.length; index += 1) {
+    const item = value[index];
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      if (pending && Object.keys(pending).length > 0) files.push(pending as RawGeneratedFile);
+      pending = null;
+      files.push(item as RawGeneratedFile);
+      continue;
+    }
+    if (typeof item === 'string') {
+      const key = item;
+      const next = value[index + 1];
+      if (['path', 'filePath', 'filepath', 'name', 'action', 'content'].includes(key)) {
+        pending ??= {};
+        pending[key] = next;
+        index += 1;
+        if (key === 'content') {
+          files.push(pending as RawGeneratedFile);
+          pending = null;
+        }
+      }
+    }
+  }
+  if (pending && Object.keys(pending).length > 0) files.push(pending as RawGeneratedFile);
+  return files;
 }
 
 function resolveProjectFile(project: ProjectRecord, relativePath: string) {
@@ -68,13 +99,44 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
   if (!project) throw new Error('项目不存在');
   const existingTree = await readProjectFileTree(project);
   const projectHasFiles = containsProjectFile(existingTree);
+  const projectContext = [
+    task,
+    project.name,
+    project.description,
+    project.requirement,
+    project.constraints,
+    project.businessType,
+    project.serverFramework,
+    project.databaseType,
+    project.databaseName,
+    project.serverUrl,
+  ].filter(Boolean).join('\n');
   if (agentId === 'a-frontend' && !projectHasFiles && /无人机|WebGL|Three\.js/i.test(task)) {
     const files = createDroneReactTemplate();
     return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-react-drone', summary: 'React + Ant Design + Three.js 无人机项目基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
   }
   if (agentId === 'a-frontend' && !projectHasFiles && /后台管理/i.test(task) && /登录/i.test(task) && /首页/i.test(task) && /Node/i.test(task)) {
+    if (/Node|Express|MySQL|数据库|全栈|后端|服务端|前后端/i.test(projectContext) || Boolean(project.databaseType || project.databaseName)) {
+      const files = createVueExpressMysqlTemplate(project.databaseName || 'frontend_agent_admin_demo');
+      return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-vue-express-mysql', summary: 'Vue 3 + Express + MySQL 全栈后台管理基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+    }
     const files = createBasicAdminTemplate();
     return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-basic-admin', summary: 'React + Ant Design + Node 后台管理基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+  }
+  if (
+    agentId === 'a-frontend'
+    && !projectHasFiles
+    && (/Node|Express|MySQL|数据库|全栈|后端|服务端|前后端/i.test(projectContext) || Boolean(project.databaseType || project.databaseName))
+  ) {
+    const files = createVueExpressMysqlTemplate(project.databaseName || 'frontend_agent_admin_demo');
+    return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-vue-express-mysql', summary: 'Vue 3 + Express + MySQL 全栈后台管理基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+  }
+  if (
+    agentId === 'a-backend'
+    && /Node|Express|MySQL|数据库|全栈|后端|服务端|前后端/i.test(projectContext)
+  ) {
+    const files = createVueExpressMysqlBackendTemplate(project.databaseName || 'frontend_agent_admin_demo');
+    return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-vue-express-mysql-backend', summary: 'Express + MySQL 后端与数据库基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
   }
   const instruction = [
     task,
@@ -88,10 +150,12 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
   if (run.status !== 'success') throw new Error(run.error || '代码生成 Agent 执行失败');
   const payload = parsePayload(run.output);
   if (!Array.isArray(payload.files) || payload.files.length === 0) throw new Error('模型返回的文件变更集为空');
-  if (payload.files.length > maxFiles) throw new Error(`单次最多生成 ${maxFiles} 个文件`);
+  const generatedFiles = normalizeGeneratedFiles(payload.files);
+  if (generatedFiles.length === 0) throw new Error('模型返回的文件变更集无法解析，请重新生成当前节点');
+  if (generatedFiles.length > maxFiles) throw new Error(`单次最多生成 ${maxFiles} 个文件`);
   const files: FileChangeItem[] = [];
-  for (const raw of payload.files) {
-    const relativePath = normalizeRelativePath(String(raw.path ?? ''));
+  for (const raw of generatedFiles) {
+    const relativePath = normalizeRelativePath(String(raw.path ?? raw.filePath ?? raw.filepath ?? raw.name ?? ''));
     const action = raw.action;
     if (!action || !['create', 'update', 'delete'].includes(action)) throw new Error(`文件 ${relativePath} 的操作类型无效`);
     const content = action === 'delete' ? '' : typeof raw.content === 'string' ? raw.content : JSON.stringify(raw.content ?? '', null, 2);

@@ -8,6 +8,8 @@ import { existsSync } from 'node:fs';
 import { getOllamaStatus } from './ollama-client.js';
 import { getProjectAgentPlan, projectRequirements, resolveRequirementAgent } from './agent-planner.js';
 import { applyFileChangeSet, generateFileChangeSet, listFileChangeSets } from './file-change-runtime.js';
+import { cancelProjectOperations } from './project-cancellation.js';
+import { assertProjectWorkspace } from './project-workspace.js';
 
 const stageDefinitions: Array<Pick<WorkflowStageRecord, 'key' | 'title' | 'agentId' | 'requiresApproval' | 'input'>> = [
   { key: 'requirements', title: '需求分析', agentId: 'a-requirement', requiresApproval: true, input: '生成完整 PRD、页面功能、角色权限、业务流程、验收标准和待确认问题。' },
@@ -24,6 +26,28 @@ const stageDefinitions: Array<Pick<WorkflowStageRecord, 'key' | 'title' | 'agent
 const runningStages = new Set<string>();
 const workflowContextBudget = 24000;
 const perStageContextBudget = 6000;
+const workspaceRequiredStages = new Set<WorkflowStageKey>(['frontend', 'backend', 'review', 'debug', 'test', 'docs']);
+
+function workflowStageTimeoutSeconds(project: ProjectRecord, models: ModelRecord[]) {
+  const model = models.find((item) => item.name === project.modelName && item.enabled);
+  return Math.max(60, (model?.timeout ?? 120) + 60);
+}
+
+async function saveStageProgress(projectId: string, stageKey: WorkflowStageKey, progress: string) {
+  const snapshots = await readSnapshots();
+  const snapshot = snapshots.find((item) => item.projectId === projectId);
+  if (!snapshot) return;
+  const now = nowText();
+  await saveSnapshot({
+    ...snapshot,
+    updatedAt: now,
+    stages: snapshot.stages.map((stage) => {
+      if (stage.key !== stageKey || stage.status !== 'running') return stage;
+      const progressLog = [...(stage.progressLog ?? []), `${now} ${progress}`].slice(-30);
+      return { ...stage, progress, progressLog, updatedAt: now };
+    }),
+  });
+}
 
 function truncateWorkflowOutput(output: string) {
   if (output.length <= perStageContextBudget) return output;
@@ -168,9 +192,20 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
   const lockKey = `${projectId}:${stageKey}`;
   if (runningStages.has(lockKey)) throw new Error('当前节点正在执行，请勿重复提交');
   runningStages.add(lockKey);
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     const capability = (await getWorkflowCapabilities(projectId)).stages.find((item) => item.stageKey === stageKey);
     if (capability && !capability.available) throw new Error(capability.reasons.join('；'));
+    const [projects, models] = await Promise.all([
+      readJson<ProjectRecord[]>(storagePaths.projects, []),
+      readJson<ModelRecord[]>(storagePaths.models, []),
+    ]);
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) throw new Error('项目不存在');
+    if (workspaceRequiredStages.has(stageKey)) {
+      await assertProjectWorkspace(project.rootPath);
+    }
+    const timeoutSeconds = workflowStageTimeoutSeconds(project, models);
     let snapshot = await getWorkflow(projectId);
     const stage = findStage(snapshot, stageKey);
     if (stage.status === 'running') throw new Error('当前节点正在执行，请等待执行完成');
@@ -181,11 +216,24 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
       ...snapshot,
       activeStage: stageKey,
       updatedAt: nowText(),
-      stages: snapshot.stages.map((item) => item.key === stageKey ? { ...item, status: 'running', input, error: '', updatedAt: nowText() } : item),
+      stages: snapshot.stages.map((item) => item.key === stageKey ? {
+        ...item,
+        status: 'running',
+        input,
+        error: '',
+        output: item.output,
+        startedAt: nowText(),
+        timeoutSeconds,
+        progress: '节点已开始执行，正在准备上下文',
+        progressLog: [`${nowText()} 节点已开始执行，超时时间 ${timeoutSeconds} 秒`],
+        updatedAt: nowText(),
+      } : item),
     });
     let run: { status: string; output: string; id: string; error: string };
     try {
-      if (stageKey === 'frontend' || stageKey === 'backend') {
+      const executeStageWork = async () => {
+        if (stageKey === 'frontend' || stageKey === 'backend') {
+          await saveStageProgress(projectId, stageKey, '正在生成文件变更集');
         const target = stageKey === 'frontend' ? '前端' : '后端';
         const changeSet = await generateFileChangeSet(
           projectId,
@@ -196,8 +244,9 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
             '必须包含项目初始化、依赖配置、核心业务代码和必要测试；按照已确认的技术选型组织目录与文件。',
           ].join('\n\n'),
         );
+        await saveStageProgress(projectId, stageKey, `文件变更集已生成，共 ${changeSet.files.length} 个文件，正在写入项目`);
         const applied = snapshot.autoMode ? await applyFileChangeSet(changeSet.id) : changeSet;
-        run = {
+        return {
           status: 'success',
           id: changeSet.agentRunId,
           error: '',
@@ -209,11 +258,22 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
           ].join('\n'),
         };
       } else {
-        run = await startAgentRun({ projectId, agentId: stage.agentId, input });
-      }
+          await saveStageProgress(projectId, stageKey, '正在调用专项 Agent 与模型');
+          return await startAgentRun({ projectId, agentId: stage.agentId, input });
+        }
+      };
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(() => {
+          cancelProjectOperations(projectId);
+          reject(new Error(`节点执行超时，已自动取消。超时时间：${timeoutSeconds} 秒`));
+        }, timeoutSeconds * 1000);
+      });
+      run = await Promise.race([executeStageWork(), timeoutPromise]);
+      await saveStageProgress(projectId, stageKey, '节点执行完成，正在更新工作流状态');
     } catch (error) {
+      const stopped = error instanceof Error && /取消|关闭|停止|超时|aborted|Abort/i.test(error.message);
       run = {
-        status: 'failed',
+        status: stopped ? 'stopped' : 'failed',
         output: '',
         id: '',
         error: error instanceof Error ? error.message : String(error),
@@ -224,7 +284,7 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
     if (latestStage?.status === 'failed' && latestStage.error === '项目客户端已关闭，运行已停止') {
       return latestSnapshot!;
     }
-    const status = run.status === 'success' ? (stage.requiresApproval ? 'review' : 'approved') : 'failed';
+    const status = run.status === 'success' ? (stage.requiresApproval ? 'review' : 'approved') : run.status === 'stopped' ? 'stopped' : 'failed';
     return saveSnapshot({
       ...snapshot,
       updatedAt: nowText(),
@@ -234,11 +294,14 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
         output: run.output,
         runId: run.id,
         error: run.error,
+        progress: status === 'approved' || status === 'review' ? '节点执行完成' : run.error,
+        progressLog: [...(item.progressLog ?? []), `${nowText()} ${status === 'approved' || status === 'review' ? '节点执行完成' : run.error}`].slice(-30),
         updatedAt: nowText(),
         confirmedAt: status === 'approved' ? nowText() : '',
       } : item),
     });
   } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
     runningStages.delete(lockKey);
   }
 }
@@ -283,8 +346,10 @@ export async function stopProjectWorkflow(projectId: string) {
     updatedAt: nowText(),
     stages: snapshot.stages.map((stage) => stage.status === 'running' ? {
       ...stage,
-      status: 'failed' as const,
+      status: 'stopped' as const,
       error: '项目客户端已关闭，运行已停止',
+      progress: '已取消执行',
+      progressLog: [...(stage.progressLog ?? []), `${nowText()} 已取消执行`].slice(-30),
       updatedAt: nowText(),
     } : stage),
   };

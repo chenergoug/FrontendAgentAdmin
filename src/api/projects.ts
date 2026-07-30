@@ -2,12 +2,24 @@ import type { PageResult, ProjectFileContent, ProjectFileNode, ProjectInfrastruc
 import { request, type QueryValue } from './request';
 
 type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
+type WorkspaceStatus = {
+  rootPath: string;
+  resolvedPath: string;
+  exists: boolean;
+  isDirectory: boolean;
+  canCreate: boolean;
+  message: string;
+};
 
 export const projectApi = {
   list: (query: Record<string, QueryValue>) => request<PageResult<ProjectRecord>>('/projects', {}, query),
   detail: (id: string) => request<ProjectRecord>(`/projects/${id}`),
   create: (data: ProjectMutation) => request<ProjectRecord>('/projects', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: ProjectMutation) => request<ProjectRecord>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  checkWorkspace: (rootPath: string) =>
+    request<WorkspaceStatus>('/projects/workspace/check', { method: 'POST', body: JSON.stringify({ rootPath }) }),
+  createWorkspace: (rootPath: string) =>
+    request<WorkspaceStatus>('/projects/workspace/create', { method: 'POST', body: JSON.stringify({ rootPath }) }),
   updateInfrastructure: (id: string, data: ProjectInfrastructureInput) => request<ProjectRecord>(`/projects/${id}/infrastructure`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
   open: (id: string) => request<ProjectRecord>(`/projects/${id}/open`, { method: 'POST' }),

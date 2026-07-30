@@ -12,6 +12,7 @@ import { listValidations, startValidation } from '../validation-runtime.js';
 import type { ModelRecord, ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
 import { cancelProjectOperations } from '../project-cancellation.js';
 import { stopProjectWorkflow } from '../workflow-runtime.js';
+import { checkProjectWorkspace, ensureProjectWorkspace } from '../project-workspace.js';
 
 type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
 
@@ -75,6 +76,18 @@ export async function handleProjectsRoute(
     models.some((item) => item.name === modelName && item.enabled)
       ? ''
       : `项目模型“${modelName || '未选择'}”不存在或未启用`;
+
+  if (id === 'workspace' && (action === 'check' || action === 'create')) {
+    const body = await parseBody<{ rootPath?: string }>(request);
+    if (request.method === 'POST' && action === 'check') {
+      send(response, 200, await checkProjectWorkspace(body.rootPath ?? ''));
+      return true;
+    }
+    if (request.method === 'POST' && action === 'create') {
+      send(response, 200, await ensureProjectWorkspace(body.rootPath ?? ''));
+      return true;
+    }
+  }
 
   if (request.method === 'GET' && id === 'export') {
     const selected = selectExportItems(projects, url);
@@ -277,6 +290,7 @@ export async function handleProjectsRoute(
       send(response, 409, { message: `项目名称“${String(projectName).trim()}”已存在` });
       return true;
     }
+    await ensureProjectWorkspace(String(body.rootPath ?? ''));
     let project: ProjectRecord = {
       id: `p-${randomUUID()}`,
       name: projectName,
@@ -356,6 +370,9 @@ export async function handleProjectsRoute(
     }
     if (nextShape === '纯前端') await deleteProjectSecrets(id);
     else if (databasePassword?.trim()) await setProjectDatabasePassword(id, databasePassword);
+    if (projectChanges.rootPath !== undefined) {
+      await ensureProjectWorkspace(String(candidate.rootPath ?? ''));
+    }
     const updated = projects.map((item) =>
       item.id === id
         ? { ...item, ...effectiveChanges, databasePasswordConfigured: passwordConfigured, id: item.id, configVersion: item.configVersion + 1, updatedAt: nowText(), status: item.status === 'draft' ? 'ready' : item.status }

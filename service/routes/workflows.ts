@@ -1,7 +1,8 @@
 import type http from 'node:http';
 import { parseBody, send } from '../http-utils.js';
-import { approveWorkflowStage, getWorkflow, getWorkflowCapabilities, listWorkflowHistory, prepareWorkflowRerun, runWorkflowStage, updateWorkflowMode, updateWorkflowStage } from '../workflow-runtime.js';
+import { approveWorkflowStage, getWorkflow, getWorkflowCapabilities, listWorkflowHistory, prepareWorkflowRerun, runWorkflowStage, stopProjectWorkflow, updateWorkflowMode, updateWorkflowStage } from '../workflow-runtime.js';
 import type { WorkflowStageKey } from '../types.js';
+import { cancelProjectOperations } from '../project-cancellation.js';
 
 export async function handleWorkflowsRoute(request: http.IncomingMessage, response: http.ServerResponse, id?: string, action?: string, subAction?: string, extraAction?: string) {
   if (!id) return false;
@@ -20,6 +21,11 @@ export async function handleWorkflowsRoute(request: http.IncomingMessage, respon
   if (request.method === 'PUT' && action === 'mode') {
     const body = await parseBody<{ autoMode?: boolean }>(request);
     send(response, 200, await updateWorkflowMode(id, Boolean(body.autoMode)));
+    return true;
+  }
+  if (request.method === 'POST' && action === 'stop') {
+    cancelProjectOperations(id);
+    send(response, 200, await stopProjectWorkflow(id));
     return true;
   }
   if (action === 'stages' && subAction) {

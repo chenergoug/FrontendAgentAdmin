@@ -224,8 +224,40 @@ export function ProjectPage() {
     form.resetFields()
   }
 
+  const confirmProjectWorkspace = async (rootPath: string) => {
+    const workspace = await projectApi.checkWorkspace(rootPath)
+    if (workspace.exists && !workspace.isDirectory) {
+      throw new Error('项目路径已存在但不是文件夹，请重新选择项目路径')
+    }
+    if (workspace.exists) return
+    await new Promise<void>((resolve, reject) => {
+      Modal.confirm({
+        title: '项目路径不存在',
+        content: `是否创建项目工作区：${workspace.resolvedPath}`,
+        okText: '创建并继续',
+        cancelText: '取消',
+        centered: true,
+        onOk: async () => {
+          try {
+            await projectApi.createWorkspace(rootPath)
+            resolve()
+          } catch (error) {
+            reject(error)
+          }
+        },
+        onCancel: () => reject(new Error('已取消创建项目工作区'))
+      })
+    })
+  }
+
   const saveProject = async () => {
     const values = await form.validateFields()
+    try {
+      await confirmProjectWorkspace(values.rootPath)
+    } catch (error) {
+      message.error((error as Error).message)
+      return
+    }
     const reservedChildWindow =
       modalMode === 'create' && !window.frontendAgent
         ? window.open('about:blank', 'frontend-agent-child-pending')

@@ -144,6 +144,7 @@ ipcMain.handle('project-client:open', async (_event, projectId: string) => {
 
   const projectName = await fetchProjectName(projectId);
   const window = new BrowserWindow(createWindowOptions(`${projectName} - Frontend Agent Child Client`));
+  window.maximize();
   projectWindows.set(projectId, window);
   window.webContents.on('render-process-gone', () => {
     void markProjectClientClosed(projectId).finally(() => notifyProjectClientChanged(projectId, 'closed'));

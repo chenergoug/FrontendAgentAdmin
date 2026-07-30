@@ -106,6 +106,26 @@ export class ElectronAutomationDriver {
     if (!filled) throw new Error(`未找到输入框：${placeholder}`)
   }
 
+  async selectAntOptionById(id: string, optionText: string) {
+    this.ensureAvailable()
+    const opened = await this.window.webContents.executeJavaScript(`(() => {
+      const input = document.getElementById(${JSON.stringify(id)})
+      if (!(input instanceof HTMLInputElement)) return false
+      input.click()
+      return true
+    })()`, true)
+    if (!opened) throw new Error(`未找到下拉框：${id}`)
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const selected = await this.window.webContents.executeJavaScript(`(() => {
+      const expected = ${JSON.stringify(optionText)}
+      const option = Array.from(document.querySelectorAll('.ant-select-item-option')).find((item) => item.textContent?.includes(expected))
+      if (!option) return false
+      option.click()
+      return true
+    })()`, true)
+    if (!selected) throw new Error(`下拉框“${id}”中没有选项：${optionText}`)
+  }
+
   async waitForButton(text: string, timeoutMs = 30000) {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {

@@ -15,6 +15,7 @@ export function acceptanceAutomationEnabled() {
 
 export function runMainAcceptanceAutomation(window: BrowserWindow) {
   if (!config.enabled) return
+  console.log(`[acceptance-automation:main] start scenario=${config.scenario} project=${config.projectName}`)
   if (config.scenario !== 'fullstack-workflow') {
     report('main', new Error(`未知验收场景：${config.scenario}`))
     return
@@ -24,5 +25,6 @@ export function runMainAcceptanceAutomation(window: BrowserWindow) {
 
 export function runChildAcceptanceAutomation(window: BrowserWindow) {
   if (!config.enabled) return
+  console.log(`[acceptance-automation:child] start project=${config.projectName}`)
   void configureFullstackChild(window, config).catch((error) => report('child', error))
 }

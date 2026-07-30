@@ -34,6 +34,324 @@ export default function RealtimeMonitor(){const ref=useRef<HTMLDivElement>(null)
   ];
 }
 
+export function createVueExpressMysqlTemplate(databaseName: string): FileChangeItem[] {
+  const dbName = databaseName || 'frontend_agent_admin_demo';
+  return [
+    file('package.json', JSON.stringify({
+      name: 'vue-express-mysql-admin',
+      version: '1.0.0',
+      private: true,
+      type: 'module',
+      scripts: {
+        dev: 'vite',
+        server: 'node server/index.mjs',
+        'db:init': 'node scripts/init-db.mjs',
+        build: 'vue-tsc --noEmit && vite build',
+        lint: 'vue-tsc --noEmit',
+        test: 'node --test tests/project.test.mjs',
+      },
+      dependencies: {
+        '@vitejs/plugin-vue': '^5.2.1',
+        express: '^4.21.2',
+        mysql2: '^3.12.0',
+        vue: '^3.5.13',
+      },
+      devDependencies: {
+        typescript: '^5.7.3',
+        vite: '^6.2.2',
+        'vue-tsc': '^2.2.0',
+      },
+    }, null, 2)),
+    file('.env.example', `PORT=4910
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=123456
+DB_NAME=${dbName}`),
+    file('tsconfig.json', JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022',
+        lib: ['ES2022', 'DOM', 'DOM.Iterable'],
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        strict: true,
+        jsx: 'preserve',
+        skipLibCheck: true,
+        isolatedModules: true,
+        noEmit: true,
+      },
+      include: ['src/**/*.ts', 'src/**/*.vue', 'vite.config.ts'],
+    }, null, 2)),
+    file('vite.config.ts', `import vue from '@vitejs/plugin-vue';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    host: '127.0.0.1',
+    port: 4288,
+    proxy: {
+      '/api': 'http://127.0.0.1:4910',
+    },
+  },
+});`),
+    file('index.html', `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>全栈后台管理</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>`),
+    file('src/main.ts', `import { createApp } from 'vue';
+import App from './App.vue';
+import './style.css';
+
+createApp(App).mount('#app');`),
+    file('src/api/client.ts', `export type LoginResult = { token: string; user: { id: number; username: string; role: string } };
+export type DashboardStats = { userTotal: number; productTotal: number };
+export type UserItem = { id: number; username: string; role: string };
+export type ProductItem = { id: number; name: string; price: number; stock: number };
+
+async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(url, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || data.error || '请求失败');
+  return data as T;
+}
+
+export const api = {
+  login: (username: string, password: string) =>
+    request<LoginResult>('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  stats: () => request<DashboardStats>('/api/stats'),
+  users: () => request<UserItem[]>('/api/users'),
+  products: () => request<ProductItem[]>('/api/products'),
+};`),
+    file('src/App.vue', `<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import { api, type DashboardStats, type ProductItem, type UserItem } from './api/client';
+
+const username = ref('admin');
+const password = ref('123456');
+const token = ref('');
+const error = ref('');
+const stats = ref<DashboardStats>({ userTotal: 0, productTotal: 0 });
+const users = ref<UserItem[]>([]);
+const products = ref<ProductItem[]>([]);
+
+async function loadDashboard() {
+  stats.value = await api.stats();
+  users.value = await api.users();
+  products.value = await api.products();
+}
+
+async function login() {
+  error.value = '';
+  try {
+    const result = await api.login(username.value, password.value);
+    token.value = result.token;
+    await loadDashboard();
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+onMounted(() => {
+  void login();
+});
+</script>
+
+<template>
+  <main v-if="!token" class="login-page">
+    <section class="login-panel">
+      <h1>全栈后台管理</h1>
+      <input v-model="username" placeholder="账号" />
+      <input v-model="password" placeholder="密码" type="password" />
+      <button @click="login">登录</button>
+      <p v-if="error" class="error">{{ error }}</p>
+    </section>
+  </main>
+  <main v-else class="app-shell">
+    <aside>
+      <strong>ADMIN</strong>
+      <span>首页</span>
+      <span>用户管理</span>
+      <span>商品管理</span>
+    </aside>
+    <section class="content">
+      <header>
+        <h1>首页统计</h1>
+        <button @click="token = ''">退出</button>
+      </header>
+      <div class="stats">
+        <article><span>用户总数</span><b>{{ stats.userTotal }}</b></article>
+        <article><span>商品总数</span><b>{{ stats.productTotal }}</b></article>
+      </div>
+      <h2>用户管理</h2>
+      <table><thead><tr><th>ID</th><th>账号</th><th>角色</th></tr></thead><tbody><tr v-for="item in users" :key="item.id"><td>{{ item.id }}</td><td>{{ item.username }}</td><td>{{ item.role }}</td></tr></tbody></table>
+      <h2>商品管理</h2>
+      <table><thead><tr><th>ID</th><th>名称</th><th>价格</th><th>库存</th></tr></thead><tbody><tr v-for="item in products" :key="item.id"><td>{{ item.id }}</td><td>{{ item.name }}</td><td>{{ item.price }}</td><td>{{ item.stock }}</td></tr></tbody></table>
+    </section>
+  </main>
+</template>`),
+    file('src/style.css', `html, body, #app { height: 100%; margin: 0; }
+body { font-family: Arial, "Microsoft YaHei", sans-serif; background: #eef2f6; color: #1f2937; }
+button { border: 0; border-radius: 6px; background: #1677ff; color: white; padding: 9px 16px; cursor: pointer; }
+input { box-sizing: border-box; width: 100%; border: 1px solid #d9d9d9; border-radius: 6px; padding: 10px 12px; }
+.login-page { height: 100%; display: grid; place-items: center; }
+.login-panel { width: 360px; display: grid; gap: 14px; padding: 28px; background: white; border-radius: 8px; box-shadow: 0 10px 30px #0001; }
+.error { color: #cf1322; }
+.app-shell { min-height: 100%; display: grid; grid-template-columns: 220px 1fr; }
+aside { display: flex; flex-direction: column; gap: 18px; padding: 24px; background: #07111f; color: #d6e4ff; }
+aside strong { color: #43e6a5; margin-bottom: 20px; }
+.content { padding: 24px; }
+header { display: flex; align-items: center; justify-content: space-between; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(160px, 240px)); gap: 16px; margin: 18px 0; }
+article { background: white; border-radius: 8px; padding: 18px; }
+article span { display: block; color: #667085; }
+article b { font-size: 32px; }
+table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; margin-bottom: 24px; }
+th, td { border-bottom: 1px solid #edf0f5; padding: 12px 14px; text-align: left; }
+th { background: #f7f9fc; }`),
+    file('server/index.mjs', `import express from 'express';
+import mysql from 'mysql2/promise';
+
+const app = express();
+const port = Number(process.env.PORT || 4910);
+const dbConfig = {
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '123456',
+  database: process.env.DB_NAME || '${dbName}',
+};
+
+app.use(express.json());
+
+async function query(sql, params = []) {
+  const connection = await mysql.createConnection(dbConfig);
+  try {
+    const [rows] = await connection.execute(sql, params);
+    return rows;
+  } finally {
+    await connection.end();
+  }
+}
+
+app.post('/api/login', async (request, response) => {
+  const { username, password } = request.body;
+  const users = await query('SELECT id, username, role FROM users WHERE username = ? AND password = ?', [username, password]);
+  if (!users.length) {
+    response.status(401).json({ message: '账号或密码错误' });
+    return;
+  }
+  response.json({ token: 'local-demo-token', user: users[0] });
+});
+
+app.get('/api/stats', async (_request, response) => {
+  const userRows = await query('SELECT COUNT(*) AS total FROM users');
+  const productRows = await query('SELECT COUNT(*) AS total FROM products');
+  response.json({ userTotal: userRows[0].total, productTotal: productRows[0].total });
+});
+
+app.get('/api/users', async (_request, response) => {
+  response.json(await query('SELECT id, username, role FROM users ORDER BY id'));
+});
+
+app.get('/api/products', async (_request, response) => {
+  response.json(await query('SELECT id, name, price, stock FROM products ORDER BY id'));
+});
+
+app.listen(port, '127.0.0.1', () => {
+  console.log(\`API http://127.0.0.1:\${port}\`);
+});`),
+    file('database/schema.sql', `CREATE DATABASE IF NOT EXISTS ${dbName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE ${dbName};
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password VARCHAR(128) NOT NULL,
+  role VARCHAR(32) NOT NULL DEFAULT 'user'
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL UNIQUE,
+  price DECIMAL(10, 2) NOT NULL,
+  stock INT NOT NULL DEFAULT 0
+);`),
+    file('database/seed.sql', `USE ${dbName};
+
+INSERT INTO users (username, password, role) VALUES
+  ('admin', '123456', 'admin'),
+  ('operator', '123456', 'user')
+ON DUPLICATE KEY UPDATE role = VALUES(role);
+
+INSERT INTO products (name, price, stock) VALUES
+  ('标准商品 A', 99.00, 120),
+  ('标准商品 B', 199.00, 45)
+ON DUPLICATE KEY UPDATE price = VALUES(price), stock = VALUES(stock);`),
+    file('scripts/init-db.mjs', `import { readFile } from 'node:fs/promises';
+import mysql from 'mysql2/promise';
+
+const config = {
+  host: process.env.DB_HOST || '127.0.0.1',
+  port: Number(process.env.DB_PORT || 3306),
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '123456',
+  multipleStatements: true,
+};
+
+const connection = await mysql.createConnection(config);
+try {
+  await connection.query(await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8'));
+  await connection.query(await readFile(new URL('../database/seed.sql', import.meta.url), 'utf8'));
+  console.log('Database initialized');
+} finally {
+  await connection.end();
+}`),
+    file('tests/project.test.mjs', `import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+test('project uses confirmed Vue Express MySQL stack', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8');
+  const server = await readFile(new URL('../server/index.mjs', import.meta.url), 'utf8');
+  const schema = await readFile(new URL('../database/schema.sql', import.meta.url), 'utf8');
+  assert.ok(pkg.dependencies.vue);
+  assert.ok(pkg.dependencies.express);
+  assert.ok(pkg.dependencies.mysql2);
+  assert.match(app, /用户管理/);
+  assert.match(app, /商品管理/);
+  assert.match(server, /\\/api\\/login/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS users/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS products/);
+});`),
+  ];
+}
+
+export function createVueExpressMysqlBackendTemplate(databaseName: string): FileChangeItem[] {
+  const backendPaths = new Set([
+    'package.json',
+    '.env.example',
+    'server/index.mjs',
+    'database/schema.sql',
+    'database/seed.sql',
+    'scripts/init-db.mjs',
+    'tests/project.test.mjs',
+  ]);
+  return createVueExpressMysqlTemplate(databaseName).filter((item) => backendPaths.has(item.path));
+}
+
 export function createBasicAdminTemplate(): FileChangeItem[] {
   return [
     file('package.json', JSON.stringify({ name: 'xx-admin', version: '1.0.0', private: true, type: 'module', scripts: { dev: 'vite', server: 'node server/index.mjs', build: 'tsc --noEmit && vite build', lint: 'tsc --noEmit', test: 'node --test tests/project.test.mjs' }, dependencies: { '@ant-design/icons': '^5.6.1', antd: '^5.24.9', react: '^18.3.1', 'react-dom': '^18.3.1' }, devDependencies: { '@types/react': '^18.3.20', '@types/react-dom': '^18.3.6', '@vitejs/plugin-react': '^4.3.4', typescript: '^5.7.3', vite: '^6.2.2' } }, null, 2)),

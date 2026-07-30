@@ -1,4 +1,4 @@
-import { CheckCircleOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined, SaveOutlined, StopOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Collapse, Descriptions, Flex, Input, Modal, Space, Spin, Steps, Switch, Table, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileChangeApi, workflowApi } from '../../src/api';
@@ -11,6 +11,7 @@ const statusMeta: Record<WorkflowStageStatus, { color: string; text: string }> =
   review: { color: 'warning', text: '待确认' },
   approved: { color: 'success', text: '已完成' },
   failed: { color: 'error', text: '失败' },
+  stopped: { color: 'default', text: '已取消' },
 };
 
 const statusProgress: Record<WorkflowStageStatus, number> = {
@@ -19,6 +20,7 @@ const statusProgress: Record<WorkflowStageStatus, number> = {
   review: 2,
   approved: 3,
   failed: 3,
+  stopped: 3,
 };
 
 function shouldReplaceWorkflow(previous: WorkflowSnapshot | null, next: WorkflowSnapshot) {
@@ -115,11 +117,6 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         if (!autoModeRef.current) break;
         setSelectedKey(nextStage.key);
-        setWorkflow((previous) => previous ? {
-          ...previous,
-          activeStage: nextStage.key,
-          stages: previous.stages.map((stage) => stage.key === nextStage.key ? { ...stage, status: 'running' } : stage),
-        } : previous);
         current = await workflowApi.run(project.id, nextStage.key);
         setWorkflow(current);
         const completedStage = current.stages.find((item) => item.key === nextStage.key);
@@ -164,11 +161,6 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
 
   const executeStage = async (stageKey: WorkflowStageKey, taskInput?: string) => {
     setExecuting(true);
-    setWorkflow((previous) => previous ? {
-      ...previous,
-      activeStage: stageKey,
-      stages: previous.stages.map((stage) => stage.key === stageKey ? { ...stage, status: 'running' } : stage),
-    } : previous);
     try {
       const result = await workflowApi.run(project.id, stageKey, taskInput?.trim() || undefined);
       setWorkflow(result);
@@ -179,6 +171,20 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       message.error((error as Error).message);
     } finally {
       await loadWorkflow(true);
+      setExecuting(false);
+    }
+  };
+
+  const stopWorkflow = async () => {
+    setExecuting(true);
+    try {
+      const result = await workflowApi.stop(project.id);
+      if (result) setWorkflow(result);
+      message.success('已取消当前工作流执行');
+      await loadWorkflow(true);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
       setExecuting(false);
     }
   };
@@ -293,6 +299,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   const selectedStatus = statusMeta[selectedStage.status];
   const selectedCapability = capabilities?.stages.find((item) => item.stageKey === selectedStage.key);
   const selectedStageIsRunning = selectedStage.status === 'running';
+  const runningStage = workflow.stages.find((stage) => stage.status === 'running');
   const workflowIsRunning = executing || workflow.stages.some((stage) => stage.status === 'running');
 
   return (
@@ -312,13 +319,14 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
                 items={workflow.stages.map((stage) => ({
                   title: stage.title,
                   description: statusMeta[stage.status].text,
-                  status: stage.status === 'approved' ? 'finish' : stage.status === 'failed' ? 'error' : stage.status === 'running' ? 'process' : 'wait',
+                  status: stage.status === 'approved' ? 'finish' : ['failed', 'stopped'].includes(stage.status) ? 'error' : stage.status === 'running' ? 'process' : 'wait',
                 }))}
               />
             </div>
             <Space>
               <Typography.Text>自动执行</Typography.Text>
               <Switch disabled={workflowIsRunning} checked={workflow.autoMode} onChange={async (checked) => setWorkflow(await workflowApi.setMode(project.id, checked))} />
+              {runningStage ? <Button danger icon={<StopOutlined />} onClick={() => void stopWorkflow()}>取消执行</Button> : null}
               <Button disabled={workflowIsRunning} icon={<HistoryOutlined />} onClick={() => void openHistory()}>历史版本</Button>
               <Button disabled={workflowIsRunning} icon={<ReloadOutlined />} onClick={() => loadWorkflow()}>刷新</Button>
             </Space>
@@ -334,6 +342,14 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
             <Descriptions.Item label="更新时间">{formatDateTimeToSecond(selectedStage.updatedAt)}</Descriptions.Item>
             <Descriptions.Item label="确认时间" span={3}>{formatDateTimeToSecond(selectedStage.confirmedAt)}</Descriptions.Item>
           </Descriptions>
+          {selectedStage.progress ? (
+            <Alert
+              style={{ marginTop: 16 }}
+              type={selectedStage.status === 'running' ? 'info' : selectedStage.status === 'stopped' ? 'warning' : selectedStage.status === 'failed' ? 'error' : 'success'}
+              showIcon
+              message={selectedStage.progress}
+            />
+          ) : null}
           <Typography.Title level={5}>任务输入</Typography.Title>
           <Input.TextArea rows={4} value={input} onChange={(event) => setInput(event.target.value)} />
           <Space style={{ marginTop: 12 }}>
