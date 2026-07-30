@@ -21,6 +21,30 @@ const stageDefinitions: Array<Pick<WorkflowStageRecord, 'key' | 'title' | 'agent
 ];
 
 const runningStages = new Set<string>();
+const workflowContextBudget = 24000;
+const perStageContextBudget = 6000;
+
+function truncateWorkflowOutput(output: string) {
+  if (output.length <= perStageContextBudget) return output;
+  const headLength = Math.floor(perStageContextBudget * 0.7);
+  const tailLength = perStageContextBudget - headLength;
+  return `${output.slice(0, headLength)}\n\n[中间内容已按上下文预算省略]\n\n${output.slice(-tailLength)}`;
+}
+
+function buildWorkflowContext(stages: WorkflowStageRecord[], currentStageKey: WorkflowStageKey) {
+  const sections = stages
+    .filter((item) => item.output && item.key !== currentStageKey)
+    .map((item) => `【${item.title}产物摘要】\n${truncateWorkflowOutput(item.output)}`);
+  const selected: string[] = [];
+  let used = 0;
+  for (let index = sections.length - 1; index >= 0; index -= 1) {
+    const section = sections[index];
+    if (used + section.length > workflowContextBudget) continue;
+    selected.unshift(section);
+    used += section.length;
+  }
+  return selected.join('\n\n');
+}
 
 function createStages(project: ProjectRecord, agents: AgentRecord[], planning = ''): WorkflowStageRecord[] {
   const requirements = projectRequirements(project, planning).filter((item) => item.workflowStageKey);
@@ -69,7 +93,7 @@ export async function getWorkflow(projectId: string) {
     const activeStage = stages.some((item) => item.key === existing.activeStage)
       ? existing.activeStage
       : stages.find((item) => item.status !== 'approved')?.key ?? stages[0]?.key ?? 'requirements';
-    const synchronized = { ...existing, version: existing.version ?? 1, activeStage, stages };
+    const synchronized = { ...existing, version: existing.version ?? 1, autoApproveSeconds: 5, activeStage, stages };
     if (JSON.stringify(synchronized) === JSON.stringify(existing)) return existing;
     return saveSnapshot(synchronized);
   }
@@ -81,7 +105,7 @@ export async function getWorkflow(projectId: string) {
     projectName: project.name,
     activeStage: 'requirements',
     autoMode: true,
-    autoApproveSeconds: 30,
+    autoApproveSeconds: 5,
     stages: desiredStages,
     createdAt: now,
     updatedAt: now,
@@ -139,10 +163,7 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
     let snapshot = await getWorkflow(projectId);
     const stage = findStage(snapshot, stageKey);
     if (stage.status === 'running') throw new Error('当前节点正在执行，请等待执行完成');
-    const context = snapshot.stages
-      .filter((item) => item.output && item.key !== stageKey)
-      .map((item) => `【${item.title}产物】\n${item.output}`)
-      .join('\n\n');
+    const context = buildWorkflowContext(snapshot.stages, stageKey);
     const input = [customInput?.trim() || stage.input, context].filter(Boolean).join('\n\n');
     snapshot = await saveSnapshot({
       ...snapshot,

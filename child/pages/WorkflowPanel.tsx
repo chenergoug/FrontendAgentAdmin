@@ -1,6 +1,6 @@
 import { CheckCircleOutlined, HistoryOutlined, PlayCircleOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Collapse, Descriptions, Flex, Input, Modal, Space, Spin, Steps, Switch, Table, Tag, Typography, message } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fileChangeApi, workflowApi } from '../../src/api';
 import type { ProjectRecord, WorkflowCapabilityReport, WorkflowHistoryRecord, WorkflowSnapshot, WorkflowStageKey, WorkflowStageStatus } from '../../src/types';
 import { formatDateTimeToSecond } from '../../src/utils/time';
@@ -34,6 +34,8 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history, setHistory] = useState<WorkflowHistoryRecord[]>([]);
   const [selectedHistory, setSelectedHistory] = useState<WorkflowHistoryRecord | null>(null);
+  const autoTransitionRef = useRef(false);
+  const approvalInFlightRef = useRef(false);
 
   const loadWorkflow = useCallback((silent = false) => {
     if (!silent) setLoading(true);
@@ -67,24 +69,31 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   }, [selectedStage?.input, selectedStage?.output, selectedStage?.key]);
 
   const runAutoSequence = useCallback(async (initial: WorkflowSnapshot) => {
+    if (autoTransitionRef.current) return initial;
+    autoTransitionRef.current = true;
     let current = initial;
-    while (current.autoMode) {
-      const activeIndex = current.stages.findIndex((item) => item.key === current.activeStage);
-      const activeStage = current.stages[activeIndex];
-      if (!activeStage || ['review', 'failed', 'running'].includes(activeStage.status)) break;
-      const nextStage = activeStage.status === 'pending' ? activeStage : current.stages[activeIndex + 1];
-      if (!nextStage) break;
-      setSelectedKey(nextStage.key);
-      current = await workflowApi.run(project.id, nextStage.key);
-      setWorkflow(current);
-      const completedStage = current.stages.find((item) => item.key === nextStage.key);
-      if (!completedStage || ['review', 'failed', 'running'].includes(completedStage.status)) break;
+    try {
+      while (current.autoMode) {
+        const activeIndex = current.stages.findIndex((item) => item.key === current.activeStage);
+        const activeStage = current.stages[activeIndex];
+        if (!activeStage || ['review', 'failed', 'running'].includes(activeStage.status)) break;
+        const nextStage = activeStage.status === 'pending' ? activeStage : current.stages[activeIndex + 1];
+        if (!nextStage) break;
+        setSelectedKey(nextStage.key);
+        current = await workflowApi.run(project.id, nextStage.key);
+        setWorkflow(current);
+        const completedStage = current.stages.find((item) => item.key === nextStage.key);
+        if (!completedStage || ['review', 'failed', 'running'].includes(completedStage.status)) break;
+      }
+      return current;
+    } finally {
+      autoTransitionRef.current = false;
     }
-    return current;
   }, [project.id]);
 
   const approve = useCallback(async (continueAutomatically = false) => {
-    if (!workflow || !selectedStage) return;
+    if (!workflow || !selectedStage || approvalInFlightRef.current) return;
+    approvalInFlightRef.current = true;
     setExecuting(true);
     try {
       const saved = artifact !== selectedStage.output
@@ -101,6 +110,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
     } catch (error) {
       message.error((error as Error).message);
     } finally {
+      approvalInFlightRef.current = false;
       setExecuting(false);
     }
   }, [artifact, project.id, runAutoSequence, selectedStage, workflow]);
@@ -110,17 +120,17 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       setCountdown(null);
       return;
     }
-    setCountdown(workflow.autoApproveSeconds);
+    let remaining = workflow.autoApproveSeconds;
+    setCountdown(remaining);
     const timer = window.setInterval(() => {
-      setCountdown((value) => {
-        if (value === null) return null;
-        if (value <= 1) {
-          window.clearInterval(timer);
-          void approve(true);
-          return null;
-        }
-        return value - 1;
-      });
+      remaining -= 1;
+      if (remaining <= 0) {
+        window.clearInterval(timer);
+        setCountdown(null);
+        if (!autoTransitionRef.current) void approve(true);
+        return;
+      }
+      setCountdown(remaining);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [approve, selectedStage?.key, selectedStage?.status, workflow?.autoApproveSeconds, workflow?.autoMode]);

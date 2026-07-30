@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 
 import path from 'node:path';
 import { defaultDataDir, nowText, storagePaths } from './config.js';
 import { createSeedSettings, seedAgentUsage, seedAgents, seedLogs, seedModelUsage, seedModels, seedProjects, seedRecovery } from './seeds.js';
-import type { AgentRecord, LogRecord } from './types.js';
+import type { AgentRecord, AgentRunRecord, LogRecord, WorkflowSnapshot } from './types.js';
 
 export function dataPath(relativePath: string) {
   return path.join(defaultDataDir, relativePath);
@@ -181,10 +181,42 @@ export async function bootstrapStorage() {
     await writeJsonAtomic(dataPath(storagePaths.agents), agents);
   }
   await Promise.all(agents.map(writeAgentFiles));
-  await readJson(storagePaths.agentRuns, []);
+  const storedRuns = await readJson<AgentRunRecord[]>(storagePaths.agentRuns, []);
+  const interruptedRunIds = new Set(storedRuns.filter((run) => run.status === 'running' || run.status === 'queued').map((run) => run.id));
+  if (interruptedRunIds.size > 0) {
+    const interruptedAt = nowText();
+    await writeJsonAtomic(
+      dataPath(storagePaths.agentRuns),
+      storedRuns.map((run) => interruptedRunIds.has(run.id) ? {
+        ...run,
+        status: 'failed' as const,
+        error: '本地服务已重启，原模型请求已中断，请重新执行当前节点',
+        endedAt: interruptedAt,
+      } : run),
+    );
+  }
   await readJson(storagePaths.agentRunLogs, []);
   await readJson(storagePaths.projectAgentPlans, []);
-  await readJson(storagePaths.workflowSnapshots, []);
+  const storedSnapshots = await readJson<WorkflowSnapshot[]>(storagePaths.workflowSnapshots, []);
+  const hasInterruptedStages = storedSnapshots.some((snapshot) => snapshot.stages.some((stage) => stage.status === 'running'));
+  if (hasInterruptedStages) {
+    await writeJsonAtomic(
+      dataPath(storagePaths.workflowSnapshots),
+      storedSnapshots.map((snapshot) => ({
+        ...snapshot,
+        stages: snapshot.stages.map((stage) =>
+          stage.status === 'running'
+            ? {
+                ...stage,
+                status: 'failed' as const,
+                error: '本地服务已重启，原模型请求已中断，请重新执行当前节点',
+                updatedAt: nowText(),
+              }
+            : stage,
+        ),
+      })),
+    );
+  }
   await readJson(storagePaths.workflowHistory, []);
   await readJson(storagePaths.fileChanges, []);
   await readJson(storagePaths.projectTasks, []);
