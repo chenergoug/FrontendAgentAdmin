@@ -160,8 +160,8 @@ export function ModelPage() {
       const status = await ollamaApi.setup()
       setSetupStatus(status)
       if (status.installed && status.running && status.modelInstalled) {
-        await modelApi.syncOllamaDefault()
-        message.success('Ollama 与默认模型已检测并同步')
+        const result = await modelApi.syncOllamaDefault()
+        message.success(`已同步 ${result.total} 个 Ollama 模型，新增 ${result.added} 个，更新 ${result.updated} 个`)
         setSetupOpen(false)
         loadData()
         return

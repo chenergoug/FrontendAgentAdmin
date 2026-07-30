@@ -7,7 +7,7 @@ export const modelApi = {
   update: (id: string, data: Partial<ModelRecord>) => request<ModelRecord>(`/models/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/models/${id}`, { method: 'DELETE' }),
   check: (id: string) => request<ModelRecord>(`/models/${id}/check`, { method: 'POST' }),
-  syncOllamaDefault: () => request<ModelRecord>('/models/ollama-default', { method: 'POST' }),
+  syncOllamaDefault: () => request<{ items: ModelRecord[]; added: number; updated: number; total: number }>('/models/ollama-default', { method: 'POST' }),
   exportData: (ids: string[]) => request<{ resource: string; exportedAt: string; total: number; items: ModelRecord[] }>('/models/export', {}, { ids: ids.join(',') }),
   importData: (data: unknown) => request<{ imported: number; total: number }>('/models/import', { method: 'POST', body: JSON.stringify(data) }),
 };

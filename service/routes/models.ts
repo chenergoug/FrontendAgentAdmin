@@ -29,33 +29,57 @@ export async function handleModelsRoute(
 
   if (request.method === 'POST' && id === 'ollama-default') {
     const status = await getOllamaStatus(defaultOllamaBaseUrl);
-    const modelId = status.models.some((item) => item.name === 'qwen2.5-coder:7b') ? 'qwen2.5-coder:7b' : status.models[0]?.name ?? 'qwen2.5-coder:7b';
-    const modelName = '本地 Qwen Coder 7B';
-    const existing = models.find((item) => item.name === modelName || item.modelId === modelId);
-    const model: ModelRecord = {
-      id: existing?.id ?? `m-${randomUUID()}`,
-      name: existing?.name ?? modelName,
-      type: '本地离线模型',
-      provider: 'Ollama',
-      baseUrl: defaultOllamaBaseUrl,
-      modelId,
-      contextWindow: 32768,
-      maxOutput: 4096,
-      timeout: 180,
-      enabled: true,
-      healthy: status.running && status.models.some((item) => item.name === modelId),
-      checkedAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
-    };
-    const nextModels = existing ? models.map((item) => (item.id === existing.id ? model : item)) : [model, ...models];
+    if (!status.running) {
+      send(response, 400, { message: 'Ollama 服务未运行，无法扫描模型' });
+      return true;
+    }
+    if (status.models.length === 0) {
+      send(response, 400, { message: 'Ollama 中没有可添加的模型' });
+      return true;
+    }
+    const checkedAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    let added = 0;
+    let updated = 0;
+    const synchronized = status.models.map((tag): ModelRecord => {
+      const existing = models.find(
+        (item) => item.provider.toLowerCase().includes('ollama') && item.modelId === tag.name,
+      );
+      if (existing) {
+        updated += 1;
+        return {
+          ...existing,
+          baseUrl: defaultOllamaBaseUrl,
+          healthy: true,
+          checkedAt,
+        };
+      }
+      added += 1;
+      return {
+        id: `m-${randomUUID()}`,
+        name: `Ollama ${tag.name}`,
+        type: '本地离线模型',
+        provider: 'Ollama',
+        baseUrl: defaultOllamaBaseUrl,
+        modelId: tag.name,
+        contextWindow: 32768,
+        maxOutput: 4096,
+        timeout: 180,
+        enabled: true,
+        healthy: true,
+        checkedAt,
+      };
+    });
+    const synchronizedIds = new Set(synchronized.map((item) => item.id));
+    const nextModels = [...synchronized, ...models.filter((item) => !synchronizedIds.has(item.id))];
     await writeJsonAtomic(dataPath(storagePaths.models), nextModels);
     await appendLog({
       type: '系统日志',
-      level: model.healthy ? 'info' : 'warning',
+      level: 'info',
       projectName: '全局',
-      title: 'Ollama 默认模型已同步',
-      detail: `${model.name}: ${model.modelId}`,
+      title: 'Ollama 模型已批量同步',
+      detail: `扫描 ${status.models.length} 个，新增 ${added} 个，更新 ${updated} 个`,
     });
-    send(response, 200, model);
+    send(response, 200, { items: synchronized, added, updated, total: synchronized.length });
     return true;
   }
 
