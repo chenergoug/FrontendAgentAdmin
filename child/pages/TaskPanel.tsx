@@ -40,7 +40,8 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
       .then(([result, validationResult]) => {
         setValidations(validationResult.list);
         setTasks(result.list);
-        const nextCurrent = currentTaskId || result.list[0]?.id || '';
+        const latestValidationTaskId = validationResult.list[0]?.taskIds.at(-1) ?? '';
+        const nextCurrent = latestValidationTaskId || currentTaskId || result.list[0]?.id || '';
         if (nextCurrent) {
           setCurrentTaskId(nextCurrent);
           return loadTaskLogs(nextCurrent);
