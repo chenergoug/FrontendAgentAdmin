@@ -10,6 +10,7 @@ export type ProjectRecord = {
   shape: string;
   deviceType: string;
   businessType: string;
+  modelName: string;
   rootPath: string;
   serverFramework: string;
   serverRootPath: string;

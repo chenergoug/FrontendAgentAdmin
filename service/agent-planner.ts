@@ -64,7 +64,7 @@ export async function getProjectAgentPlan(projectId: string, nextPlanning?: stri
   ]);
   const project = projects.find((item) => item.id === projectId);
   if (!project) throw new Error('项目不存在');
-  const modelName = models.find((item) => item.enabled)?.name ?? '';
+  const modelName = models.find((item) => item.name === project.modelName && item.enabled)?.name ?? project.modelName;
   const defaultPlanning = [project.requirement, project.description].filter(Boolean).join('\n\n') || `完成${project.name}的需求分析、架构设计、开发、审核、测试和交付文档。`;
   const planning = nextPlanning?.trim() || savedPlans.find((item) => item.projectId === projectId)?.planning || defaultPlanning;
   if (nextPlanning !== undefined) {

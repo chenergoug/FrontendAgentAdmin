@@ -88,7 +88,10 @@ async function buildPrompt(project: ProjectRecord, input: string, structured = f
   ].join('\n');
 }
 
-function pickModel(models: ModelRecord[], agent: AgentRecord) {
+function pickModel(models: ModelRecord[], agent: AgentRecord, project: ProjectRecord) {
+  if (project.modelName) {
+    return models.find((item) => item.name === project.modelName && item.enabled);
+  }
   return (
     models.find((item) => item.name === agent.modelName && item.enabled) ??
     models.find((item) => item.provider.toLowerCase().includes('ollama') && item.enabled) ??
@@ -174,7 +177,7 @@ export async function startAgentRun(input: StartAgentRunInput) {
     throw new Error('Agent 不存在或未启用');
   }
 
-  const model = pickModel(models, agent);
+  const model = pickModel(models, agent, project);
   if (!model) {
     throw new Error('未找到可用模型配置');
   }

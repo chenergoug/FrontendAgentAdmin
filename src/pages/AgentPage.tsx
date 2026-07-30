@@ -327,7 +327,6 @@ export function AgentPage({ configurationRequest, onConfigurationRequestHandled 
           导出 Agent
         </Button>
         <Button onClick={initDefaultAgents}>同步默认 Agent</Button>
-        <Button>Agent Builder 生成草稿</Button>
       </Space>
       <div ref={tableWrapperRef} style={tableCardStyle}>
         <Card style={tableCardInnerStyle} styles={{ body: tableCardBodyStyle }}>
@@ -363,7 +362,7 @@ export function AgentPage({ configurationRequest, onConfigurationRequestHandled 
         open={modalMode !== null}
         centered
         destroyOnHidden
-        maskClosable={false}
+        mask={{ closable: false }}
         onCancel={() => setModalMode(null)}
         onOk={save}
         footer={modalMode === 'detail' ? (_, { CancelBtn }) => <CancelBtn /> : undefined}

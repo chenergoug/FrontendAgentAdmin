@@ -47,6 +47,7 @@ export const emptyProject: ProjectRecord = {
   shape: '纯前端',
   deviceType: 'PC端',
   businessType: '',
+  modelName: '',
   rootPath: '',
   serverFramework: '',
   serverRootPath: '',

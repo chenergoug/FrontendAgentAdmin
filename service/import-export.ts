@@ -97,6 +97,7 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
     if (!validUrl(item.serverUrl, false)) errors.push(`第 ${index + 1} 条服务器地址格式不合法`);
     if (item.status && !projectStatuses.has(item.status)) errors.push(`第 ${index + 1} 条项目状态不合法`);
     if (!isOptionalString(item.businessType, 200)) errors.push(`第 ${index + 1} 条业务类型过长`);
+    if (!isString(item.modelName, 100)) errors.push(`第 ${index + 1} 条项目模型不能为空且不能超过 100 字`);
     if (!isOptionalString(item.description, 2000)) errors.push(`第 ${index + 1} 条项目介绍过长`);
     if (!isOptionalString(item.requirement, 10000)) errors.push(`第 ${index + 1} 条原始需求过长`);
 
@@ -107,6 +108,7 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
       shape: String(item.shape ?? ''),
       deviceType: String(item.deviceType ?? ''),
       businessType: String(item.businessType ?? ''),
+      modelName: String(item.modelName ?? ''),
       rootPath: String(item.rootPath ?? ''),
       serverFramework: String(item.serverFramework ?? ''),
       serverRootPath: String(item.serverRootPath ?? ''),

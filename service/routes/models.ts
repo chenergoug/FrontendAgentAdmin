@@ -7,7 +7,7 @@ import { checkModelHealth } from '../model-health.js';
 import { defaultOllamaBaseUrl, getOllamaStatus } from '../ollama-client.js';
 import { seedModels } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
-import type { ModelRecord } from '../types.js';
+import type { ModelRecord, ProjectRecord } from '../types.js';
 
 async function validateLocalOllamaModel(model: Partial<ModelRecord>) {
   if (model.type !== '本地离线模型') return '';
@@ -137,6 +137,16 @@ export async function handleModelsRoute(
   if (request.method === 'PUT' && id) {
     const body = await parseBody<Partial<ModelRecord>>(request);
     const existing = models.find((item) => item.id === id);
+    if (!existing) {
+      send(response, 404, { message: '模型不存在' });
+      return true;
+    }
+    const projects = await readJson<ProjectRecord[]>(storagePaths.projects, []);
+    const referencingProjects = projects.filter((item) => item.modelName === existing.name);
+    if (body.enabled === false && referencingProjects.length > 0) {
+      send(response, 409, { message: `模型正在被 ${referencingProjects.length} 个项目使用，请先修改项目模型` });
+      return true;
+    }
     const localModelError = await validateLocalOllamaModel({ ...existing, ...body });
     if (localModelError) {
       send(response, 400, { message: localModelError });
@@ -151,11 +161,28 @@ export async function handleModelsRoute(
     }
     const updated = models.map((item) => (item.id === id ? { ...item, ...body, id: item.id } : item));
     await writeJsonAtomic(dataPath(storagePaths.models), updated);
+    if (body.name && body.name !== existing.name && referencingProjects.length > 0) {
+      await writeJsonAtomic(
+        dataPath(storagePaths.projects),
+        projects.map((item) => item.modelName === existing.name ? { ...item, modelName: body.name! } : item),
+      );
+    }
     send(response, 200, updated.find((item) => item.id === id));
     return true;
   }
 
   if (request.method === 'DELETE' && id) {
+    const model = models.find((item) => item.id === id);
+    if (!model) {
+      send(response, 404, { message: '模型不存在' });
+      return true;
+    }
+    const projects = await readJson<ProjectRecord[]>(storagePaths.projects, []);
+    const usageCount = projects.filter((item) => item.modelName === model.name).length;
+    if (usageCount > 0) {
+      send(response, 409, { message: `模型正在被 ${usageCount} 个项目使用，请先修改项目模型` });
+      return true;
+    }
     await writeJsonAtomic(dataPath(storagePaths.models), models.filter((item) => item.id !== id));
     await appendLog({ type: '系统日志', level: 'warning', projectName: '全局', title: '模型配置已删除', detail: id });
     send(response, 200, { ok: true });

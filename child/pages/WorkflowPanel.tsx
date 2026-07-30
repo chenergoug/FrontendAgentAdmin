@@ -315,7 +315,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
           title="重新执行工作流节点"
           open={Boolean(rerunStageKey)}
           centered
-          maskClosable={false}
+          mask={{ closable: false }}
           okText="归档并重新执行"
           cancelText="取消"
           confirmLoading={executing}

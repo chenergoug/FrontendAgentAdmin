@@ -164,7 +164,7 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
           open={Boolean(selectedPlan)}
           centered
           destroyOnHidden
-          maskClosable={false}
+          mask={{ closable: false }}
           onCancel={() => setSelectedPlan(null)}
           footer={(_, { CancelBtn }) => <CancelBtn />}
           width={820}

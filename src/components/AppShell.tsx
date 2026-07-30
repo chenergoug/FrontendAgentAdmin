@@ -19,9 +19,9 @@ type AppShellProps = {
 
 const menuItems: { key: MenuKey; label: string; icon: ReactNode }[] = [
   { key: 'home', label: '首页', icon: <HomeOutlined /> },
-  { key: 'projects', label: '项目中心', icon: <AppstoreOutlined /> },
   { key: 'models', label: '模型配置', icon: <ControlOutlined /> },
   { key: 'agents', label: 'Agent 配置', icon: <RobotOutlined /> },
+  { key: 'projects', label: '项目中心', icon: <AppstoreOutlined /> },
   { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
   { key: 'logs', label: '运行日志', icon: <FileTextOutlined /> },
   { key: 'recovery', label: '恢复中心', icon: <DashboardOutlined /> },

@@ -125,9 +125,17 @@ export async function bootstrapStorage() {
     configDir: dataPath('system'),
     logDir: dataPath('logs'),
   });
-  await readMigratedJson(storagePaths.projects, seedProjects);
+  const storedProjects = await readMigratedJson(storagePaths.projects, seedProjects);
   await readJson(storagePaths.projectSecrets, []);
-  await readMigratedJson(storagePaths.models, seedModels);
+  const storedModels = await readMigratedJson(storagePaths.models, seedModels);
+  const fallbackModelName = storedModels.find((model) => model.enabled)?.name ?? '';
+  const projects = storedProjects.map((project) => ({
+    ...project,
+    modelName: project.modelName || fallbackModelName,
+  }));
+  if (JSON.stringify(projects) !== JSON.stringify(storedProjects)) {
+    await writeJsonAtomic(dataPath(storagePaths.projects), projects);
+  }
   const storedAgents = await readMigratedJson(storagePaths.agents, seedAgents);
   const agents = storedAgents
     .filter((agent) => agent.id !== 'a-orchestrator' && agent.category !== '主调度' && !/总调度/.test(agent.name))

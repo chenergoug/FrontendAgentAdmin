@@ -9,7 +9,7 @@ import { appendLog, dataPath, readJson, writeJsonAtomic } from '../storage.js';
 import { deleteProjectSecrets, hasProjectDatabasePassword, setProjectDatabasePassword } from '../project-secrets.js';
 import { listProjectTasks, readTaskLogs, startProjectTask, stopProjectTask } from '../task-manager.js';
 import { listValidations, startValidation } from '../validation-runtime.js';
-import type { ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
+import type { ModelRecord, ProjectRecord, ProjectStatus, ProjectTaskType } from '../types.js';
 
 type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
 
@@ -67,6 +67,12 @@ export async function handleProjectsRoute(
   extraAction?: string,
 ) {
   const projects = await readJson<ProjectRecord[]>(storagePaths.projects, seedProjects);
+  const models = await readJson<ModelRecord[]>(storagePaths.models, []);
+
+  const validateProjectModel = (modelName: string | undefined) =>
+    models.some((item) => item.name === modelName && item.enabled)
+      ? ''
+      : `项目模型“${modelName || '未选择'}”不存在或未启用`;
 
   if (request.method === 'GET' && id === 'export') {
     const selected = selectExportItems(projects, url);
@@ -81,6 +87,10 @@ export async function handleProjectsRoute(
   if (request.method === 'POST' && id === 'import') {
     const body = await parseBody<Partial<ProjectRecord>[] | { items?: Partial<ProjectRecord>[] }>(request);
     const result = normalizeProjectsImport(body);
+    result.items.forEach((item, index) => {
+      const modelError = validateProjectModel(item.modelName);
+      if (modelError) result.errors.push(`第 ${index + 1} 条${modelError}`);
+    });
     if (result.errors.length > 0) {
       send(response, 400, { message: '项目导入失败', errors: result.errors });
       return true;
@@ -200,10 +210,13 @@ export async function handleProjectsRoute(
       ['name', '项目名称'],
       ['shape', '项目形态'],
       ['deviceType', '项目类型'],
+      ['modelName', '项目模型'],
       ['rootPath', '项目路径'],
     ];
     const missingFields = requiredFields.filter(([key]) => !String(body[key] ?? '').trim()).map(([, label]) => label);
     missingFields.push(...validateServerConfiguration(body, Boolean(body.databasePassword?.trim())));
+    const modelError = validateProjectModel(body.modelName);
+    if (modelError) missingFields.push(modelError);
     if (missingFields.length > 0) {
       send(response, 400, { message: `请填写必填内容：${missingFields.join('、')}` });
       return true;
@@ -221,6 +234,7 @@ export async function handleProjectsRoute(
       shape: body.shape ?? '纯前端',
       deviceType: body.deviceType ?? 'PC端',
       businessType: body.businessType ?? '',
+      modelName: body.modelName ?? '',
       rootPath: body.rootPath ?? '',
       serverFramework: body.serverFramework ?? '',
       serverRootPath: body.serverRootPath ?? '',
@@ -281,6 +295,11 @@ export async function handleProjectsRoute(
       ? false
       : Boolean(databasePassword?.trim()) || await hasProjectDatabasePassword(id);
     const candidate = { ...existing, ...effectiveChanges, databasePasswordConfigured: passwordConfigured };
+    const modelError = validateProjectModel(candidate.modelName);
+    if (modelError) {
+      send(response, 400, { message: modelError });
+      return true;
+    }
     const missingServerFields = validateServerConfiguration(candidate, passwordConfigured);
     if (missingServerFields.length > 0) {
       send(response, 400, { message: `请填写必填内容：${missingServerFields.join('、')}` });

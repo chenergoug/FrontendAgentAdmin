@@ -1,8 +1,8 @@
 import { BugOutlined } from '@ant-design/icons'
 import { Card, Layout, Menu, Result, Spin, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { ollamaApi, projectApi } from '../src/api'
-import type { OllamaStatus, ProjectRecord } from '../src/types'
+import { modelApi, ollamaApi, projectApi } from '../src/api'
+import type { ModelRecord, OllamaStatus, ProjectRecord } from '../src/types'
 import { emptyProject, menuItems } from './constants'
 import { LockedProject } from './components/LockedProject'
 import { AgentWorkspacePanel } from './pages/AgentWorkspacePanel'
@@ -24,6 +24,7 @@ export function ChildApp() {
   const [closedByHost, setClosedByHost] = useState(false)
   const [loading, setLoading] = useState(false)
   const [modelStatus, setModelStatus] = useState<OllamaStatus | null>(null)
+  const [models, setModels] = useState<ModelRecord[]>([])
   const [modelStatusError, setModelStatusError] = useState(false)
   const hasProject = Boolean(project.id)
 
@@ -46,11 +47,11 @@ export function ChildApp() {
   useEffect(() => {
     let active = true
     const loadModelStatus = () => {
-      ollamaApi
-        .status()
-        .then((status) => {
+      Promise.all([ollamaApi.status(), modelApi.list({ page: 1, pageSize: 100 })])
+        .then(([status, modelResult]) => {
           if (!active) return
           setModelStatus(status)
+          setModels(modelResult.list)
           setModelStatusError(false)
         })
         .catch(() => {
@@ -124,10 +125,18 @@ export function ChildApp() {
     )
   }
 
-  const modelName = modelStatus?.models[0]?.name ?? '未配置模型'
-  const clientRuntime = modelStatusError
+  const modelName = project.modelName || '未配置'
+  const selectedModel = models.find((item) => item.name === project.modelName)
+  const isOllama = selectedModel?.provider.toLowerCase().includes('ollama')
+  const modelAvailable = Boolean(
+    selectedModel?.enabled &&
+      (isOllama
+        ? modelStatus?.running && modelStatus.models.some((item) => item.name === selectedModel.modelId)
+        : selectedModel.healthy)
+  )
+  const clientRuntime = !selectedModel || (isOllama && modelStatusError)
     ? { color: 'red', text: `${modelName}模型` }
-    : modelStatus?.running && modelStatus.models.length > 0
+    : modelAvailable
       ? { color: 'green', text: `${modelName}模型` }
       : { color: 'gold', text: `${modelName}模型` }
 

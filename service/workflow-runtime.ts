@@ -216,8 +216,10 @@ export async function getWorkflowCapabilities(projectId: string): Promise<Workfl
     const agent = agents.find((item) => item.id === stage.agentId);
     if (!agent) reasons.push(`缺少 ${stage.agentId}`);
     else if (!agent.enabled) reasons.push(`${agent.name} 未启用`);
-    const model = agent ? models.find((item) => item.name === agent.modelName && item.enabled) : undefined;
-    if (agent && !model) reasons.push(`Agent 绑定模型“${agent.modelName}”不存在或未启用`);
+    const model = project
+      ? models.find((item) => item.name === project.modelName && item.enabled)
+      : undefined;
+    if (agent && !model) reasons.push(`项目绑定模型“${project?.modelName || '未配置'}”不存在或未启用`);
     if (model?.provider === 'Ollama' && (!ollamaRunning || !installedModels.has(model.modelId))) reasons.push(`本地模型 ${model.modelId} 未运行或未安装`);
     if (!projectPathAvailable && ['frontend', 'backend', 'review', 'debug', 'test', 'docs'].includes(stage.key)) reasons.push('项目路径不存在');
     return { stageKey: stage.key, agentId: stage.agentId, available: reasons.length === 0, reasons };

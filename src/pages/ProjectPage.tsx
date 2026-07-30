@@ -18,10 +18,10 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import type { Key } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { projectApi } from '../api'
+import { modelApi, projectApi } from '../api'
 import { TableToolbar } from '../components/TableToolbar'
 import { PathPickerInput } from '../components/PathPickerInput'
-import type { PageResult, ProjectDeviceType, ProjectRecord, ProjectShape, ProjectStatus } from '../types'
+import type { ModelRecord, PageResult, ProjectDeviceType, ProjectRecord, ProjectShape, ProjectStatus } from '../types'
 import { downloadJson, exportSelectionFilename, readJsonFile, showImportError } from '../utils/transfer'
 import {
   tableCardBodyStyle,
@@ -65,6 +65,7 @@ function createProject(): ProjectFormValues {
     shape: '纯前端',
     deviceType: 'PC端',
     businessType: '后台管理',
+    modelName: '',
     rootPath: '',
     serverFramework: '',
     serverRootPath: 'server',
@@ -106,6 +107,7 @@ export function ProjectPage() {
   const [pageSize, setPageSize] = useState(10)
   const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([])
   const [data, setData] = useState<PageResult<ProjectRecord>>({ list: [], total: 0, page: 1, pageSize: 10 })
+  const [models, setModels] = useState<ModelRecord[]>([])
   const { tableWrapperRef, scrollY } = useTableScrollY([data.list.length, loading, page, pageSize])
   const projectShape = Form.useWatch('shape', form)
   const childWindowsRef = useRef(new Map<string, Window>())
@@ -131,6 +133,13 @@ export function ProjectPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    modelApi
+      .list({ page: 1, pageSize: 100 })
+      .then((result) => setModels(result.list.filter((item) => item.enabled)))
+      .catch((error: Error) => message.error(error.message))
+  }, [])
 
   useEffect(() => {
     const reloadProjectStatus = () => {
@@ -361,6 +370,7 @@ export function ProjectPage() {
       { title: '项目形态', dataIndex: 'shape', width: 140 },
       { title: '项目类型', dataIndex: 'deviceType', width: 100 },
       { title: '业务类型', dataIndex: 'businessType', width: 220, ellipsis: true },
+      { title: '项目模型', dataIndex: 'modelName', width: 180, ellipsis: true, render: (value: string) => value || '未配置' },
       {
         title: 'Git 地址',
         dataIndex: 'gitRemote',
@@ -534,6 +544,7 @@ export function ProjectPage() {
             <Descriptions.Item label="项目形态">{currentProject.shape}</Descriptions.Item>
             <Descriptions.Item label="项目类型">{currentProject.deviceType}</Descriptions.Item>
             <Descriptions.Item label="业务类型">{currentProject.businessType}</Descriptions.Item>
+            <Descriptions.Item label="项目模型">{currentProject.modelName || '未配置'}</Descriptions.Item>
             <Descriptions.Item label="项目路径" span={2}>
               {currentProject.rootPath}
             </Descriptions.Item>
@@ -583,6 +594,17 @@ export function ProjectPage() {
             </Form.Item>
             <Form.Item name="businessType" label="业务类型">
               <Input />
+            </Form.Item>
+            <Form.Item name="modelName" label="项目模型" rules={[{ required: true, message: '请选择项目使用的模型' }]}>
+              <Select
+                showSearch
+                placeholder="选择子客户端执行任务时使用的模型"
+                optionFilterProp="label"
+                options={models.map((item) => ({
+                  label: `${item.name} / ${item.provider} / ${item.modelId}`,
+                  value: item.name
+                }))}
+              />
             </Form.Item>
             <Form.Item name="rootPath" label="项目路径" rules={[{ required: true, message: '请选择或输入项目路径' }]}>
               <PathPickerInput placeholder="请选择或输入具体项目文件夹" />
