@@ -69,7 +69,9 @@ export async function getWorkflow(projectId: string) {
     const activeStage = stages.some((item) => item.key === existing.activeStage)
       ? existing.activeStage
       : stages.find((item) => item.status !== 'approved')?.key ?? stages[0]?.key ?? 'requirements';
-    return saveSnapshot({ ...existing, version: existing.version ?? 1, activeStage, stages });
+    const synchronized = { ...existing, version: existing.version ?? 1, activeStage, stages };
+    if (JSON.stringify(synchronized) === JSON.stringify(existing)) return existing;
+    return saveSnapshot(synchronized);
   }
   const now = nowText();
   return saveSnapshot({

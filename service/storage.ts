@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { appendFile, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultDataDir, nowText, storagePaths } from './config.js';
 import { createSeedSettings, seedAgentUsage, seedAgents, seedLogs, seedModelUsage, seedModels, seedProjects, seedRecovery } from './seeds.js';
@@ -9,11 +9,48 @@ export function dataPath(relativePath: string) {
   return path.join(defaultDataDir, relativePath);
 }
 
-export async function writeJsonAtomic(file: string, value: unknown) {
+const pendingFileWrites = new Map<string, Promise<void>>();
+
+function isRetryableRenameError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES' || code === 'EEXIST';
+}
+
+async function renameWithRetry(tempFile: string, file: string) {
+  const attempts = process.platform === 'win32' ? 12 : 3;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rename(tempFile, file);
+      return;
+    } catch (error) {
+      if (!isRetryableRenameError(error) || attempt === attempts - 1) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
+    }
+  }
+}
+
+async function writeJsonAtomicNow(file: string, value: unknown) {
   await mkdir(path.dirname(file), { recursive: true });
   const tempFile = `${file}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
-  await writeFile(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  await rename(tempFile, file);
+  try {
+    await writeFile(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+    await renameWithRetry(tempFile, file);
+  } catch (error) {
+    await unlink(tempFile).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function writeJsonAtomic(file: string, value: unknown) {
+  const normalizedFile = path.resolve(file).toLowerCase();
+  const previous = pendingFileWrites.get(normalizedFile) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(() => writeJsonAtomicNow(file, value));
+  pendingFileWrites.set(normalizedFile, current);
+  try {
+    await current;
+  } finally {
+    if (pendingFileWrites.get(normalizedFile) === current) pendingFileWrites.delete(normalizedFile);
+  }
 }
 
 export async function readJson<T>(relativePath: string, fallback: T): Promise<T> {
