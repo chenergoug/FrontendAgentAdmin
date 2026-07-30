@@ -19,7 +19,7 @@ function getProjectId() {
 
 export function ChildApp() {
   const projectId = useMemo(getProjectId, [])
-  const [activeMenu, setActiveMenu] = useState<ChildMenuKey>('workspace')
+  const [activeMenu, setActiveMenu] = useState<ChildMenuKey>('tasks')
   const [project, setProject] = useState<ProjectRecord>(emptyProject)
   const [closedByHost, setClosedByHost] = useState(false)
   const [loading, setLoading] = useState(false)

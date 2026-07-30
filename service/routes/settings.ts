@@ -17,6 +17,17 @@ export async function handleSettingsRoute(request: http.IncomingMessage, respons
 
   if (request.method === 'PUT' && id) {
     const body = await parseBody<Partial<SettingRecord>>(request);
+    const existing = settings.find((item) => item.id === id);
+    if (!existing) {
+      send(response, 404, { message: '系统配置不存在' });
+      return true;
+    }
+    const booleanPairs = [['开启', '关闭'], ['启用', '停用'], ['是', '否']];
+    const pair = booleanPairs.find((item) => item.includes(existing.value));
+    if (pair && body.value !== undefined && !pair.includes(body.value)) {
+      send(response, 400, { message: `配置值只能选择“${pair[0]}”或“${pair[1]}”` });
+      return true;
+    }
     const updated = settings.map((item) => (item.id === id ? { ...item, ...body, id: item.id } : item));
     await writeJsonAtomic(dataPath(storagePaths.settings), updated);
     await appendLog({

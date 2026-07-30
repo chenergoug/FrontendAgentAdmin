@@ -1,31 +1,25 @@
-import { CheckOutlined, CloseOutlined, EyeOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Descriptions, Drawer, Empty, Input, List, Popconfirm, Row, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { CheckOutlined, CloseOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Descriptions, Drawer, Empty, List, Popconfirm, Row, Space, Spin, Table, Tag, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
-import { agentApi, fileChangeApi } from '../../src/api';
-import type { AgentRecord, FileChangeItem, FileChangeSet, ProjectRecord } from '../../src/types';
+import { fileChangeApi } from '../../src/api';
+import type { FileChangeItem, FileChangeSet, ProjectRecord } from '../../src/types';
 import { formatDateTimeToSecond } from '../../src/utils/time';
 
 const statusColor: Record<FileChangeSet['status'], string> = { pending: 'gold', applied: 'green', rejected: 'default', failed: 'red' };
 const actionColor: Record<FileChangeItem['action'], string> = { create: 'green', update: 'blue', delete: 'red' };
 
 export function FileChangesPanel({ project }: { project: ProjectRecord }) {
-  const [agents, setAgents] = useState<AgentRecord[]>([]);
   const [changeSets, setChangeSets] = useState<FileChangeSet[]>([]);
   const [current, setCurrent] = useState<FileChangeSet | null>(null);
   const [preview, setPreview] = useState<FileChangeItem | null>(null);
-  const [agentId, setAgentId] = useState('');
-  const [task, setTask] = useState('根据已确认的需求、架构和开发计划，生成下一批可运行的项目代码。');
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(() => {
     setLoading(true);
-    Promise.all([agentApi.list({ page: 1, pageSize: 100 }), fileChangeApi.list(project.id)])
-      .then(([agentResult, changeResult]) => {
-        const developmentAgents = agentResult.list.filter((item) => ['前端开发', '后端开发'].includes(item.category) && item.enabled);
-        setAgents(developmentAgents);
-        setAgentId((value) => value || developmentAgents[0]?.id || '');
+    fileChangeApi.list(project.id)
+      .then((changeResult) => {
         setChangeSets(changeResult.list);
         setCurrent((value) => changeResult.list.find((item) => item.id === value?.id) ?? changeResult.list[0] ?? null);
       })
@@ -35,22 +29,6 @@ export function FileChangesPanel({ project }: { project: ProjectRecord }) {
 
   useEffect(() => loadData(), [loadData]);
   useEffect(() => setSelectedPaths(current?.files.filter((item) => item.selected).map((item) => item.path) ?? []), [current]);
-
-  const generate = async () => {
-    if (!agentId) return message.warning('请选择开发 Agent');
-    if (!task.trim()) return message.warning('请输入代码生成任务');
-    setLoading(true);
-    try {
-      const result = await fileChangeApi.generate({ projectId: project.id, agentId, task: task.trim() });
-      setCurrent(result);
-      message.success(`已生成 ${result.files.length} 个待审批文件`);
-      loadData();
-    } catch (error) {
-      message.error((error as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const applyChanges = async () => {
     if (!current) return;
@@ -91,14 +69,6 @@ export function FileChangesPanel({ project }: { project: ProjectRecord }) {
   return (
     <Spin spinning={loading}>
       <Space direction="vertical" size={16} className="full-width">
-        <Card title="生成文件变更">
-          <Row gutter={12}>
-            <Col span={6}><Select value={agentId || undefined} placeholder="开发 Agent" options={agents.map((item) => ({ label: item.name, value: item.id }))} onChange={setAgentId} /></Col>
-            <Col span={14}><Input value={task} onChange={(event) => setTask(event.target.value)} /></Col>
-            <Col span={4}><Button block type="primary" icon={<PlayCircleOutlined />} onClick={generate}>生成变更</Button></Col>
-          </Row>
-        </Card>
-
         <Row gutter={16}>
           <Col span={7}>
             <Card title="变更历史" extra={<Button icon={<ReloadOutlined />} onClick={loadData} />}>
@@ -138,7 +108,7 @@ export function FileChangesPanel({ project }: { project: ProjectRecord }) {
                     rowSelection={current.status === 'pending' ? { selectedRowKeys: selectedPaths, onChange: (keys) => setSelectedPaths(keys.map(String)) } : undefined}
                   />
                 </Space>
-              ) : <Empty description="请选择或生成变更集" />}
+              ) : <Empty description="开发流程尚未生成文件变更" />}
             </Card>
           </Col>
         </Row>

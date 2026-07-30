@@ -26,7 +26,6 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   const [artifact, setArtifact] = useState('');
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<WorkflowCapabilityReport | null>(null);
   const [rerunStageKey, setRerunStageKey] = useState<WorkflowStageKey | null>(null);
   const [rerunReason, setRerunReason] = useState('');
@@ -36,6 +35,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   const [selectedHistory, setSelectedHistory] = useState<WorkflowHistoryRecord | null>(null);
   const autoTransitionRef = useRef(false);
   const approvalInFlightRef = useRef(false);
+  const autoModeRef = useRef(false);
 
   const loadWorkflow = useCallback((silent = false) => {
     if (!silent) setLoading(true);
@@ -43,7 +43,10 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       .then(([snapshot, report]) => {
         setWorkflow(snapshot);
         setCapabilities(report);
-        if (silent && !snapshot.stages.some((stage) => stage.status === 'running')) setExecuting(false);
+        const runningStage = snapshot.stages.find((stage) => stage.status === 'running');
+        if (snapshot.autoMode && (runningStage || autoTransitionRef.current)) {
+          setSelectedKey(runningStage?.key ?? snapshot.activeStage);
+        }
         return snapshot;
       })
       .catch((error: Error) => message.error(error.message))
@@ -52,6 +55,7 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
 
   useEffect(() => { void loadWorkflow(); }, [loadWorkflow]);
   useEffect(() => setSelectedKey(initialStage), [initialStage]);
+  useEffect(() => { autoModeRef.current = Boolean(workflow?.autoMode); }, [workflow?.autoMode]);
 
   useEffect(() => {
     const hasRunningStage = workflow?.stages.some((stage) => stage.status === 'running') ?? false;
@@ -76,14 +80,28 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       while (current.autoMode) {
         const activeIndex = current.stages.findIndex((item) => item.key === current.activeStage);
         const activeStage = current.stages[activeIndex];
-        if (!activeStage || ['review', 'failed', 'running'].includes(activeStage.status)) break;
+        if (!activeStage || ['failed', 'running'].includes(activeStage.status)) break;
+        if (activeStage.status === 'review') {
+          if (!activeStage.output.trim()) break;
+          current = await workflowApi.approve(project.id, activeStage.key);
+          setWorkflow(current);
+          setSelectedKey(current.activeStage);
+          continue;
+        }
         const nextStage = activeStage.status === 'pending' ? activeStage : current.stages[activeIndex + 1];
         if (!nextStage) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        if (!autoModeRef.current) break;
         setSelectedKey(nextStage.key);
+        setWorkflow((previous) => previous ? {
+          ...previous,
+          activeStage: nextStage.key,
+          stages: previous.stages.map((stage) => stage.key === nextStage.key ? { ...stage, status: 'running' } : stage),
+        } : previous);
         current = await workflowApi.run(project.id, nextStage.key);
         setWorkflow(current);
         const completedStage = current.stages.find((item) => item.key === nextStage.key);
-        if (!completedStage || ['review', 'failed', 'running'].includes(completedStage.status)) break;
+        if (!completedStage || ['failed', 'running'].includes(completedStage.status)) break;
       }
       return current;
     } finally {
@@ -102,7 +120,6 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
       const approved = await workflowApi.approve(project.id, selectedStage.key);
       setWorkflow(approved);
       setSelectedKey(approved.activeStage);
-      setCountdown(null);
       message.success(`${selectedStage.title}已确认`);
       if (continueAutomatically && approved.activeStage !== selectedStage.key) {
         await runAutoSequence(approved);
@@ -116,27 +133,20 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   }, [artifact, project.id, runAutoSequence, selectedStage, workflow]);
 
   useEffect(() => {
-    if (!workflow?.autoMode || selectedStage?.status !== 'review') {
-      setCountdown(null);
-      return;
-    }
-    let remaining = workflow.autoApproveSeconds;
-    setCountdown(remaining);
-    const timer = window.setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        window.clearInterval(timer);
-        setCountdown(null);
-        if (!autoTransitionRef.current) void approve(true);
-        return;
-      }
-      setCountdown(remaining);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [approve, selectedStage?.key, selectedStage?.status, workflow?.autoApproveSeconds, workflow?.autoMode]);
+    if (!workflow?.autoMode || selectedStage?.status !== 'review' || autoTransitionRef.current) return;
+    setExecuting(true);
+    void runAutoSequence(workflow)
+      .catch((error: Error) => message.error(error.message))
+      .finally(() => setExecuting(false));
+  }, [runAutoSequence, selectedStage?.key, selectedStage?.status, workflow]);
 
   const executeStage = async (stageKey: WorkflowStageKey, taskInput?: string) => {
     setExecuting(true);
+    setWorkflow((previous) => previous ? {
+      ...previous,
+      activeStage: stageKey,
+      stages: previous.stages.map((stage) => stage.key === stageKey ? { ...stage, status: 'running' } : stage),
+    } : previous);
     try {
       const result = await workflowApi.run(project.id, stageKey, taskInput?.trim() || undefined);
       setWorkflow(result);
@@ -239,17 +249,19 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
 
   const generateDocumentation = async () => {
     if (!selectedStage?.output) return;
+    const messageKey = `generate-documentation-${project.id}`;
     setExecuting(true);
+    message.loading({ key: messageKey, content: '正在生成项目文档，请稍候...', duration: 0 });
     try {
       const result = await fileChangeApi.generate({
         projectId: project.id,
         agentId: 'a-docs',
         task: `将以下交付文档产物生成到项目 README.md 和 docs 目录，输出待审批文件变更：\n\n${selectedStage.output}`,
       });
-      message.success(`已生成 ${result.files.length} 个文档文件，请审批`);
+      message.success({ key: messageKey, content: `已生成 ${result.files.length} 个文档文件，正在打开文件变更`, duration: 2 });
       onOpenChanges?.();
     } catch (error) {
-      message.error((error as Error).message);
+      message.error({ key: messageKey, content: (error as Error).message, duration: 4 });
     } finally {
       setExecuting(false);
     }
@@ -258,10 +270,11 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
   if (!workflow || !selectedStage) return <Spin spinning={loading} />;
   const selectedStatus = statusMeta[selectedStage.status];
   const selectedCapability = capabilities?.stages.find((item) => item.stageKey === selectedStage.key);
-  const stageIsRunning = executing || selectedStage.status === 'running';
+  const selectedStageIsRunning = selectedStage.status === 'running';
+  const workflowIsRunning = executing || workflow.stages.some((stage) => stage.status === 'running');
 
   return (
-    <Spin spinning={loading || executing}>
+    <Spin spinning={loading || workflowIsRunning} size="large" tip="工作流正在执行，请稍候...">
       <Flex vertical gap={16}>
         <Card>
           <Flex className="workflow-toolbar" align="center" gap={16}>
@@ -277,22 +290,18 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
                 items={workflow.stages.map((stage) => ({
                   title: stage.title,
                   description: statusMeta[stage.status].text,
-                  status: stage.status === 'approved' ? 'finish' : stage.status === 'failed' ? 'error' : stage.key === selectedKey ? 'process' : 'wait',
+                  status: stage.status === 'approved' ? 'finish' : stage.status === 'failed' ? 'error' : stage.status === 'running' ? 'process' : 'wait',
                 }))}
               />
             </div>
             <Space>
               <Typography.Text>自动执行</Typography.Text>
-              <Switch disabled={stageIsRunning} checked={workflow.autoMode} onChange={async (checked) => setWorkflow(await workflowApi.setMode(project.id, checked))} />
-              <Button disabled={stageIsRunning} icon={<HistoryOutlined />} onClick={() => void openHistory()}>历史版本</Button>
-              <Button disabled={stageIsRunning} icon={<ReloadOutlined />} onClick={() => loadWorkflow()}>刷新</Button>
+              <Switch disabled={workflowIsRunning} checked={workflow.autoMode} onChange={async (checked) => setWorkflow(await workflowApi.setMode(project.id, checked))} />
+              <Button disabled={workflowIsRunning} icon={<HistoryOutlined />} onClick={() => void openHistory()}>历史版本</Button>
+              <Button disabled={workflowIsRunning} icon={<ReloadOutlined />} onClick={() => loadWorkflow()}>刷新</Button>
             </Space>
           </Flex>
         </Card>
-
-        {countdown !== null ? (
-          <Alert type="warning" showIcon message={`${countdown} 秒后自动确认并执行下一节点`} action={<Button size="small" onClick={() => workflowApi.setMode(project.id, false).then(setWorkflow)}>切换手动执行</Button>} />
-        ) : null}
 
         {selectedCapability && !selectedCapability.available ? <Alert type="warning" showIcon message="当前节点能力不完整" description={selectedCapability.reasons.join('；')} /> : null}
 
@@ -306,18 +315,18 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
           <Typography.Title level={5}>任务输入</Typography.Title>
           <Input.TextArea rows={4} value={input} onChange={(event) => setInput(event.target.value)} />
           <Space style={{ marginTop: 12 }}>
-            <Button type="primary" icon={<PlayCircleOutlined />} loading={stageIsRunning} disabled={stageIsRunning} onClick={runStage}>
-              {stageIsRunning ? '执行中' : '执行当前节点'}
+            <Button type="primary" icon={<PlayCircleOutlined />} loading={selectedStageIsRunning} disabled={workflowIsRunning} onClick={runStage}>
+              {selectedStageIsRunning ? '执行中' : '执行当前节点'}
             </Button>
           </Space>
           {selectedStage.error ? <Alert style={{ marginTop: 16 }} type="error" showIcon message={selectedStage.error} /> : null}
           <Typography.Title level={5}>节点产物</Typography.Title>
           <Input.TextArea rows={16} value={artifact} onChange={(event) => setArtifact(event.target.value)} placeholder="执行完成后将在此生成可编辑产物" />
           <Space style={{ marginTop: 12 }}>
-            <Button icon={<SaveOutlined />} disabled={stageIsRunning || !artifact.trim()} onClick={saveArtifact}>保存修改</Button>
-            <Button type="primary" icon={<CheckCircleOutlined />} disabled={stageIsRunning || !artifact.trim()} onClick={() => approve(false)}>确认并进入下一步</Button>
-            {['review', 'debug'].includes(selectedStage.key) ? <Button disabled={stageIsRunning || !artifact.trim()} onClick={generateRepair}>生成修复变更</Button> : null}
-            {selectedStage.key === 'docs' ? <Button disabled={stageIsRunning || !artifact.trim()} onClick={generateDocumentation}>生成项目文档</Button> : null}
+            <Button icon={<SaveOutlined />} disabled={workflowIsRunning || !artifact.trim()} onClick={saveArtifact}>保存修改</Button>
+            <Button type="primary" icon={<CheckCircleOutlined />} disabled={workflowIsRunning || !artifact.trim()} onClick={() => approve(workflow.autoMode)}>确认并进入下一步</Button>
+            {['review', 'debug'].includes(selectedStage.key) ? <Button disabled={workflowIsRunning || !artifact.trim()} onClick={generateRepair}>生成修复变更</Button> : null}
+            {selectedStage.key === 'docs' ? <Button disabled={workflowIsRunning || !artifact.trim()} onClick={generateDocumentation}>生成项目文档</Button> : null}
           </Space>
         </Card>
 

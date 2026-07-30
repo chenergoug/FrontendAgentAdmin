@@ -20,7 +20,8 @@ function containsProjectFile(nodes: ProjectFileNode[]): boolean {
 type GeneratedPayload = { summary?: string; files?: Array<{ path?: string; action?: FileChangeAction; content?: unknown }> };
 
 function normalizeRelativePath(value: string) {
-  const normalized = value.replaceAll('\\', '/').replace(/^\.\//, '');
+  const source = value.replaceAll('\\', '/').replace(/^\.\//, '');
+  const normalized = ['.env', '.env.local'].includes(source.toLowerCase()) ? '.env.example' : source;
   if (!normalized || path.posix.isAbsolute(normalized) || normalized.split('/').includes('..')) throw new Error(`不安全的文件路径：${value}`);
   if (blockedPaths.has(normalized.toLowerCase()) || normalized.startsWith('.git/')) throw new Error(`禁止修改敏感文件：${normalized}`);
   return normalized;
@@ -78,7 +79,7 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
     task,
     '输出 JSON Schema：{"summary":"说明","files":[{"path":"相对路径","action":"create|update|delete","content":"文件完整内容"}]}。',
     '每个文件必须提供完整内容，不使用省略号。单文件不超过 500 行；页面、组件、hooks、api、types 和服务必须拆分。',
-    '禁止输出 .env、Git 配置和依赖锁文件，禁止绝对路径与 .. 路径。',
+    '环境变量模板只能输出 .env.example，不得输出 .env 或 .env.local；禁止输出 Git 配置和依赖锁文件，禁止绝对路径与 .. 路径。',
   ].join('\n');
   const run = await startAgentRun({ projectId, agentId, input: instruction, structured: true });
   if (run.status !== 'success') throw new Error(run.error || '代码生成 Agent 执行失败');

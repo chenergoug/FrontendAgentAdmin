@@ -56,7 +56,22 @@ function createModel(): ModelRecord {
     timeout: 120,
     enabled: true,
     healthy: false,
-    checkedAt: '未检查'
+    checkedAt: '未检查',
+    capabilities: {
+      structuredOutput: true,
+      toolCalling: false,
+      vision: false,
+      streaming: true,
+      reasoning: false,
+      codeGeneration: true
+    },
+    execution: {
+      maxConcurrentRequests: 1,
+      contextUsageRatio: 0.75,
+      outputUsageRatio: 0.8
+    },
+    capabilitySource: 'default',
+    capabilityCheckedAt: ''
   }
 }
 
@@ -131,10 +146,11 @@ export function ModelPage() {
           throw new Error(`本地未安装模型：${values.modelId || '-'}`)
         }
       }
+      const payload = { ...values, capabilitySource: 'manual' as const }
       if (modalMode === 'create') {
-        await modelApi.create(values)
+        await modelApi.create(payload)
       } else {
-        await modelApi.update(current.id, values)
+        await modelApi.update(current.id, payload)
       }
       message.success('模型配置已保存')
       setModalMode(null)
@@ -441,6 +457,12 @@ export function ModelPage() {
             </Descriptions.Item>
             <Descriptions.Item label="上下文">{current.contextWindow}</Descriptions.Item>
             <Descriptions.Item label="最大输出">{current.maxOutput}</Descriptions.Item>
+            <Descriptions.Item label="结构化输出">{current.capabilities.structuredOutput ? '支持' : '不支持'}</Descriptions.Item>
+            <Descriptions.Item label="工具调用">{current.capabilities.toolCalling ? '支持' : '不支持'}</Descriptions.Item>
+            <Descriptions.Item label="视觉理解">{current.capabilities.vision ? '支持' : '不支持'}</Descriptions.Item>
+            <Descriptions.Item label="推理能力">{current.capabilities.reasoning ? '支持' : '不支持'}</Descriptions.Item>
+            <Descriptions.Item label="代码生成">{current.capabilities.codeGeneration ? '支持' : '不支持'}</Descriptions.Item>
+            <Descriptions.Item label="最大并发">{current.execution.maxConcurrentRequests}</Descriptions.Item>
           </Descriptions>
         ) : (
           <Form form={form} layout="vertical" className="grid-form">
@@ -502,6 +524,21 @@ export function ModelPage() {
             </Form.Item>
             <Form.Item name="timeout" label="超时(s)">
               <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name={['capabilities', 'structuredOutput']} label="结构化输出" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['capabilities', 'toolCalling']} label="工具调用" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['capabilities', 'vision']} label="视觉理解" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['capabilities', 'streaming']} label="流式输出" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['capabilities', 'reasoning']} label="推理能力" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['capabilities', 'codeGeneration']} label="代码生成" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name={['execution', 'maxConcurrentRequests']} label="最大并发请求" rules={[{ required: true }]}>
+              <InputNumber min={1} max={8} precision={0} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name={['execution', 'contextUsageRatio']} label="上下文使用比例" rules={[{ required: true }]}>
+              <InputNumber min={0.3} max={0.9} step={0.05} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name={['execution', 'outputUsageRatio']} label="输出使用比例" rules={[{ required: true }]}>
+              <InputNumber min={0.3} max={1} step={0.05} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="enabled" label="启用" valuePropName="checked">
               <Switch />

@@ -1,4 +1,4 @@
-import type { PageResult, ProjectFileContent, ProjectFileNode, ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskType, ProjectValidationRecord } from '../types';
+import type { PageResult, ProjectFileContent, ProjectFileNode, ProjectInfrastructureInput, ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskType, ProjectValidationRecord } from '../types';
 import { request, type QueryValue } from './request';
 
 type ProjectMutation = Partial<ProjectRecord> & { databasePassword?: string };
@@ -8,6 +8,7 @@ export const projectApi = {
   detail: (id: string) => request<ProjectRecord>(`/projects/${id}`),
   create: (data: ProjectMutation) => request<ProjectRecord>('/projects', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: ProjectMutation) => request<ProjectRecord>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateInfrastructure: (id: string, data: ProjectInfrastructureInput) => request<ProjectRecord>(`/projects/${id}/infrastructure`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
   open: (id: string) => request<ProjectRecord>(`/projects/${id}/open`, { method: 'POST' }),
   close: (id: string) => request<ProjectRecord>(`/projects/${id}/close`, { method: 'POST' }),

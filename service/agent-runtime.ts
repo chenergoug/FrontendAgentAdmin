@@ -71,6 +71,7 @@ async function buildPrompt(project: ProjectRecord, input: string, structured = f
     `数据库密码：${project.databasePasswordConfigured ? '已安全配置，不向 Agent 明文暴露' : '未配置'}`,
     `项目介绍：${project.description || '-'}`,
     `原始需求：${project.requirement || '-'}`,
+    `硬性约束：${project.constraints || '-'}`,
     '当前文件概况：',
     fileSummary,
     ...(sourceContext ? ['', sourceContext] : []),

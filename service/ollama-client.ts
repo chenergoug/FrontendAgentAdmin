@@ -82,6 +82,7 @@ export async function generateWithOllama(input: {
   system?: string;
   prompt: string;
   contextWindow?: number;
+  maxOutputTokens?: number;
   timeoutSeconds?: number;
   json?: boolean;
 }) {
@@ -96,6 +97,7 @@ export async function generateWithOllama(input: {
       ...(input.json ? { format: 'json' } : {}),
       options: {
         num_ctx: input.contextWindow,
+        num_predict: input.maxOutputTokens,
       },
     }),
     signal: AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? 120) * 1000),

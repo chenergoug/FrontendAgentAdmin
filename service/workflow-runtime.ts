@@ -6,7 +6,8 @@ import type { ProjectRecord, WorkflowHistoryRecord, WorkflowSnapshot, WorkflowSt
 import type { AgentRecord, ModelRecord, WorkflowCapabilityReport } from './types.js';
 import { existsSync } from 'node:fs';
 import { getOllamaStatus } from './ollama-client.js';
-import { projectRequirements, resolveRequirementAgent } from './agent-planner.js';
+import { getProjectAgentPlan, projectRequirements, resolveRequirementAgent } from './agent-planner.js';
+import { applyFileChangeSet, generateFileChangeSet, listFileChangeSets } from './file-change-runtime.js';
 
 const stageDefinitions: Array<Pick<WorkflowStageRecord, 'key' | 'title' | 'agentId' | 'requiresApproval' | 'input'>> = [
   { key: 'requirements', title: '需求分析', agentId: 'a-requirement', requiresApproval: true, input: '生成完整 PRD、页面功能、角色权限、业务流程、验收标准和待确认问题。' },
@@ -46,8 +47,17 @@ function buildWorkflowContext(stages: WorkflowStageRecord[], currentStageKey: Wo
   return selected.join('\n\n');
 }
 
-function createStages(project: ProjectRecord, agents: AgentRecord[], planning = ''): WorkflowStageRecord[] {
-  const requirements = projectRequirements(project, planning).filter((item) => item.workflowStageKey);
+function buildTechnologyContext(plan: Awaited<ReturnType<typeof getProjectAgentPlan>>) {
+  if (plan.technologyRecommendations.length === 0) return '';
+  const selections = plan.technologyRecommendations.map((item) => {
+    const choice = item.selected?.trim() || item.recommended;
+    return `- ${item.area}：${choice}${item.confirmed ? '（用户已确认）' : '（模型推荐，用户尚未确认）'}`;
+  });
+  return `【项目技术选型】\n${selections.join('\n')}\n后续设计、开发、测试和文档必须以这些选型为准；如发现冲突，应明确指出并等待用户调整，不得自行替换。`;
+}
+
+function createStages(project: ProjectRecord, agents: AgentRecord[], capabilities: { hasFrontend: boolean; hasBackend: boolean }, planning = ''): WorkflowStageRecord[] {
+  const requirements = projectRequirements(project, capabilities, planning).filter((item) => item.workflowStageKey);
   return requirements.map((requirement) => {
     const definition = stageDefinitions.find((item) => item.key === requirement.workflowStageKey);
     if (!definition) throw new Error(`工作流节点定义不存在：${requirement.workflowStageKey}`);
@@ -74,7 +84,8 @@ export async function listWorkflowHistory(projectId: string) {
 }
 
 export async function getWorkflow(projectId: string) {
-  const [snapshots, projects, agents, savedPlans] = await Promise.all([
+  const [plan, snapshots, projects, agents, savedPlans] = await Promise.all([
+    getProjectAgentPlan(projectId),
     readSnapshots(),
     readJson<ProjectRecord[]>(storagePaths.projects, []),
     readJson<AgentRecord[]>(storagePaths.agents, []),
@@ -84,7 +95,7 @@ export async function getWorkflow(projectId: string) {
   const project = projects.find((item) => item.id === projectId);
   if (!project) throw new Error('项目不存在');
   const planning = savedPlans.find((item) => item.projectId === projectId)?.planning ?? '';
-  const desiredStages = createStages(project, agents, planning);
+  const desiredStages = createStages(project, agents, plan, planning);
   if (existing) {
     const stages = desiredStages.map((desired) => {
       const previous = existing.stages.find((item) => item.key === desired.key);
@@ -93,7 +104,7 @@ export async function getWorkflow(projectId: string) {
     const activeStage = stages.some((item) => item.key === existing.activeStage)
       ? existing.activeStage
       : stages.find((item) => item.status !== 'approved')?.key ?? stages[0]?.key ?? 'requirements';
-    const synchronized = { ...existing, version: existing.version ?? 1, autoApproveSeconds: 5, activeStage, stages };
+    const synchronized = { ...existing, version: existing.version ?? 1, autoApproveSeconds: 0, activeStage, stages };
     if (JSON.stringify(synchronized) === JSON.stringify(existing)) return existing;
     return saveSnapshot(synchronized);
   }
@@ -105,7 +116,7 @@ export async function getWorkflow(projectId: string) {
     projectName: project.name,
     activeStage: 'requirements',
     autoMode: true,
-    autoApproveSeconds: 5,
+    autoApproveSeconds: 0,
     stages: desiredStages,
     createdAt: now,
     updatedAt: now,
@@ -164,14 +175,50 @@ export async function runWorkflowStage(projectId: string, stageKey: WorkflowStag
     const stage = findStage(snapshot, stageKey);
     if (stage.status === 'running') throw new Error('当前节点正在执行，请等待执行完成');
     const context = buildWorkflowContext(snapshot.stages, stageKey);
-    const input = [customInput?.trim() || stage.input, context].filter(Boolean).join('\n\n');
+    const technologyContext = buildTechnologyContext(await getProjectAgentPlan(projectId));
+    const input = [customInput?.trim() || stage.input, technologyContext, context].filter(Boolean).join('\n\n');
     snapshot = await saveSnapshot({
       ...snapshot,
       activeStage: stageKey,
       updatedAt: nowText(),
       stages: snapshot.stages.map((item) => item.key === stageKey ? { ...item, status: 'running', input, error: '', updatedAt: nowText() } : item),
     });
-    const run = await startAgentRun({ projectId, agentId: stage.agentId, input });
+    let run: { status: string; output: string; id: string; error: string };
+    try {
+      if (stageKey === 'frontend' || stageKey === 'backend') {
+        const target = stageKey === 'frontend' ? '前端' : '后端';
+        const changeSet = await generateFileChangeSet(
+          projectId,
+          stage.agentId,
+          [
+            input,
+            `现在执行${target}开发，不再输出规划或伪代码。请生成可直接运行、构建和测试的完整代码文件变更集。`,
+            '必须包含项目初始化、依赖配置、核心业务代码和必要测试；按照已确认的技术选型组织目录与文件。',
+          ].join('\n\n'),
+        );
+        const applied = snapshot.autoMode ? await applyFileChangeSet(changeSet.id) : changeSet;
+        run = {
+          status: 'success',
+          id: changeSet.agentRunId,
+          error: '',
+          output: [
+            `${target}代码变更集已生成，共 ${changeSet.files.length} 个文件。`,
+            `变更状态：${applied.status === 'applied' ? '已自动写入项目' : '等待用户在文件变更中审批'}`,
+            '',
+            ...changeSet.files.map((file) => `- ${file.action}: ${file.path}`),
+          ].join('\n'),
+        };
+      } else {
+        run = await startAgentRun({ projectId, agentId: stage.agentId, input });
+      }
+    } catch (error) {
+      run = {
+        status: 'failed',
+        output: '',
+        id: '',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
     const status = run.status === 'success' ? (stage.requiresApproval ? 'review' : 'approved') : 'failed';
     return saveSnapshot({
       ...snapshot,
@@ -201,6 +248,11 @@ export async function approveWorkflowStage(projectId: string, stageKey: Workflow
   const snapshot = await getWorkflow(projectId);
   const stage = findStage(snapshot, stageKey);
   if (!stage.output) throw new Error('当前节点没有可确认的产物');
+  if (stageKey === 'frontend' || stageKey === 'backend') {
+    const pendingChangeSet = (await listFileChangeSets(projectId))
+      .find((item) => item.agentRunId === stage.runId && item.status === 'pending');
+    if (pendingChangeSet) throw new Error(`请先在“文件变更”中应用${stageKey === 'frontend' ? '前端' : '后端'}代码，再确认当前节点`);
+  }
   const index = snapshot.stages.findIndex((item) => item.key === stageKey);
   const nextStage = snapshot.stages[index + 1];
   return saveSnapshot({

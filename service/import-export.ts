@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { nowText } from './config.js';
+import { normalizeModelRecord } from './model-capabilities.js';
 import type { AgentRecord, ModelRecord, ProjectRecord, ProjectStatus } from './types.js';
 
 type ImportBody<T> = T[] | { items?: T[] };
@@ -100,6 +101,7 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
     if (!isString(item.modelName, 100)) errors.push(`第 ${index + 1} 条项目模型不能为空且不能超过 100 字`);
     if (!isOptionalString(item.description, 2000)) errors.push(`第 ${index + 1} 条项目介绍过长`);
     if (!isOptionalString(item.requirement, 10000)) errors.push(`第 ${index + 1} 条原始需求过长`);
+    if (!isOptionalString(item.constraints, 5000)) errors.push(`第 ${index + 1} 条硬性约束过长`);
 
     return {
       id: isOptionalString(item.id, 100) && item.id ? item.id : `p-${randomUUID()}`,
@@ -133,6 +135,7 @@ export function normalizeProjectsImport(body: ImportBody<Partial<ProjectRecord>>
       updatedAt: nowText(),
       description: String(item.description ?? ''),
       requirement: String(item.requirement ?? ''),
+      constraints: String(item.constraints ?? ''),
     };
   });
 
@@ -157,7 +160,7 @@ export function normalizeModelsImport(body: ImportBody<Partial<ModelRecord>>) {
     if (!isPositiveNumber(item.maxOutput, 1000000)) errors.push(`第 ${index + 1} 条最大输出必须是正数`);
     if (!isPositiveNumber(item.timeout, 3600)) errors.push(`第 ${index + 1} 条超时时间必须是 1-3600 秒`);
 
-    return {
+    return normalizeModelRecord({
       id: isOptionalString(item.id, 100) && item.id ? item.id : `m-${randomUUID()}`,
       name: String(item.name ?? '').trim(),
       type: item.type === '本地离线模型' ? '本地离线模型' : '线上模型',
@@ -170,7 +173,7 @@ export function normalizeModelsImport(body: ImportBody<Partial<ModelRecord>>) {
       enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
       healthy: false,
       checkedAt: '未检查',
-    };
+    });
   });
 
   return { items: normalized.filter(Boolean) as ModelRecord[], errors };

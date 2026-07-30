@@ -6,8 +6,10 @@ import { exportPayload, findNameConflict, mergeById, normalizeAgentsImport, sele
 import { ensureDefaultAgents } from '../agent-runtime.js';
 import { seedAgents } from '../seeds.js';
 import { appendLog, dataPath, readJson, writeAgentFiles, writeJsonAtomic } from '../storage.js';
-import type { AgentRecord } from '../types.js';
-import { getProjectAgentPlan } from '../agent-planner.js';
+import type { AgentRecord, TechnologyRecommendation } from '../types.js';
+import { getProjectAgentPlan, updateProjectTechnologyRecommendations } from '../agent-planner.js';
+
+const regeneratingProjectPlans = new Set<string>();
 
 export async function handleAgentsRoute(request: http.IncomingMessage, response: http.ServerResponse, url: URL, id?: string) {
   const agents = await readJson<AgentRecord[]>(storagePaths.agents, seedAgents);
@@ -17,12 +19,32 @@ export async function handleAgentsRoute(request: http.IncomingMessage, response:
     return true;
   }
   if (request.method === 'POST' && id === 'plan') {
-    const body = await parseBody<{ projectId?: string; planning?: string }>(request);
+    const body = await parseBody<{ projectId?: string; planning?: string; technologyRecommendations?: TechnologyRecommendation[] }>(request);
+    if (Array.isArray(body.technologyRecommendations)) {
+      send(response, 200, await updateProjectTechnologyRecommendations(body.projectId ?? '', body.technologyRecommendations));
+      return true;
+    }
     if (!body.planning?.trim()) {
       send(response, 400, { message: '开发规划不能为空' });
       return true;
     }
-    send(response, 200, await getProjectAgentPlan(body.projectId ?? '', body.planning));
+    const projectId = body.projectId ?? '';
+    const workflowSnapshots = await readJson<Array<{ projectId: string; stages?: Array<{ status?: string }> }>>(storagePaths.workflowSnapshots, []);
+    const workflow = workflowSnapshots.find((item) => item.projectId === projectId);
+    if (workflow?.stages?.some((stage) => stage.status !== 'pending')) {
+      send(response, 409, { message: '开发工作流已经开始，不能重新生成 Agent 清单；请先在开发流程中完成或归档当前工作流' });
+      return true;
+    }
+    if (regeneratingProjectPlans.has(projectId)) {
+      send(response, 409, { message: '当前项目正在重新分析并生成 Agent 清单，请等待完成' });
+      return true;
+    }
+    regeneratingProjectPlans.add(projectId);
+    try {
+      send(response, 200, await getProjectAgentPlan(projectId, body.planning));
+    } finally {
+      regeneratingProjectPlans.delete(projectId);
+    }
     return true;
   }
 

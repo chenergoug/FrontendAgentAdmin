@@ -4,6 +4,7 @@ import path from 'node:path';
 import { defaultDataDir, nowText, storagePaths } from './config.js';
 import { createSeedSettings, seedAgentUsage, seedAgents, seedLogs, seedModelUsage, seedModels, seedProjects, seedRecovery } from './seeds.js';
 import type { AgentRecord, AgentRunRecord, LogRecord, WorkflowSnapshot } from './types.js';
+import { normalizeModelRecord } from './model-capabilities.js';
 
 export function dataPath(relativePath: string) {
   return path.join(defaultDataDir, relativePath);
@@ -165,10 +166,15 @@ export async function bootstrapStorage() {
   const storedProjects = await readMigratedJson(storagePaths.projects, seedProjects);
   await readJson(storagePaths.projectSecrets, []);
   const storedModels = await readMigratedJson(storagePaths.models, seedModels);
-  const fallbackModelName = storedModels.find((model) => model.enabled)?.name ?? '';
+  const models = storedModels.map(normalizeModelRecord);
+  if (JSON.stringify(models) !== JSON.stringify(storedModels)) {
+    await writeJsonAtomic(dataPath(storagePaths.models), models);
+  }
+  const fallbackModelName = models.find((model) => model.enabled)?.name ?? '';
   const projects = storedProjects.map((project) => ({
     ...project,
     modelName: project.modelName || fallbackModelName,
+    constraints: project.constraints || '',
   }));
   if (JSON.stringify(projects) !== JSON.stringify(storedProjects)) {
     await writeJsonAtomic(dataPath(storagePaths.projects), projects);

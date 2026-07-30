@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Flex, Form, Input, Modal, Select, Space, Table, message } from 'antd';
+import { Button, Card, Descriptions, Flex, Form, Input, Modal, Select, Space, Switch, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { settingApi } from '../api';
@@ -17,6 +17,16 @@ import {
 } from '../utils/table';
 
 type ModalMode = 'edit' | 'detail' | null;
+
+const booleanValuePairs = [
+  ['开启', '关闭'],
+  ['启用', '停用'],
+  ['是', '否'],
+] as const;
+
+function booleanPair(value?: string) {
+  return booleanValuePairs.find((pair) => pair.includes(value as never));
+}
 
 export function SettingsPage() {
   const [form] = Form.useForm<SettingRecord>();
@@ -67,7 +77,16 @@ export function SettingsPage() {
   const columns: ColumnsType<SettingRecord> = withIndexColumn<SettingRecord>([
     { title: '配置分组', dataIndex: 'group', width: 160 },
     { title: '配置名称', dataIndex: 'name', width: 180, render: (_, item) => <Button type="link" onClick={() => open('detail', item)}>{item.name}</Button> },
-    { title: '配置值', dataIndex: 'value', width: 220, ellipsis: true },
+    {
+      title: '配置值',
+      dataIndex: 'value',
+      width: 220,
+      ellipsis: true,
+      render: (value: string) => {
+        const pair = booleanPair(value);
+        return pair ? <Tag color={value === pair[0] ? 'green' : 'default'}>{value}</Tag> : value;
+      },
+    },
     { title: '说明', dataIndex: 'description', ellipsis: true },
     { title: '操作', width: 120, render: (_, item) => <Space><Button type="link" onClick={() => open('detail', item)}>查看</Button><Button type="link" onClick={() => open('edit', item)}>编辑</Button></Space> },
   ], page, pageSize);
@@ -98,14 +117,28 @@ export function SettingsPage() {
           <Descriptions bordered column={1} size="small">
             <Descriptions.Item label="配置分组">{current?.group}</Descriptions.Item>
             <Descriptions.Item label="配置名称">{current?.name}</Descriptions.Item>
-            <Descriptions.Item label="配置值">{current?.value}</Descriptions.Item>
+            <Descriptions.Item label="配置值">
+              {booleanPair(current?.value)
+                ? <Tag color={current?.value === booleanPair(current?.value)?.[0] ? 'green' : 'default'}>{current?.value}</Tag>
+                : current?.value}
+            </Descriptions.Item>
             <Descriptions.Item label="说明">{current?.description}</Descriptions.Item>
           </Descriptions>
         ) : (
           <Form form={form} layout="vertical">
             <Form.Item name="group" label="配置分组"><Input disabled /></Form.Item>
             <Form.Item name="name" label="配置名称"><Input disabled /></Form.Item>
-            <Form.Item name="value" label="配置值"><Input /></Form.Item>
+            {booleanPair(current?.value) ? (
+              <Form.Item
+                name="value"
+                label="配置值"
+                getValueProps={(value: string) => ({ checked: value === booleanPair(current?.value)?.[0] })}
+                getValueFromEvent={(checked: boolean) => checked ? booleanPair(current?.value)?.[0] : booleanPair(current?.value)?.[1]}>
+                <Switch checkedChildren={booleanPair(current?.value)?.[0]} unCheckedChildren={booleanPair(current?.value)?.[1]} />
+              </Form.Item>
+            ) : (
+              <Form.Item name="value" label="配置值" rules={[{ required: true, message: '请输入配置值' }]}><Input /></Form.Item>
+            )}
             <Form.Item name="description" label="说明"><Input.TextArea rows={3} /></Form.Item>
           </Form>
         )}

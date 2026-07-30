@@ -36,6 +36,19 @@ export type ProjectRecord = {
   updatedAt: string;
   description: string;
   requirement: string;
+  constraints: string;
+};
+
+export type ProjectInfrastructureInput = {
+  configureDatabase: boolean;
+  configureServer: boolean;
+  databaseType?: string;
+  databaseHost?: string;
+  databasePort?: string;
+  databaseName?: string;
+  databaseUsername?: string;
+  databasePassword?: string;
+  serverUrl?: string;
 };
 
 export type ModelRecord = {
@@ -51,6 +64,25 @@ export type ModelRecord = {
   enabled: boolean;
   healthy: boolean;
   checkedAt: string;
+  capabilities: ModelCapabilities;
+  execution: ModelExecutionSettings;
+  capabilitySource: 'default' | 'detected' | 'provider' | 'manual';
+  capabilityCheckedAt: string;
+};
+
+export type ModelCapabilities = {
+  structuredOutput: boolean;
+  toolCalling: boolean;
+  vision: boolean;
+  streaming: boolean;
+  reasoning: boolean;
+  codeGeneration: boolean;
+};
+
+export type ModelExecutionSettings = {
+  maxConcurrentRequests: number;
+  contextUsageRatio: number;
+  outputUsageRatio: number;
 };
 
 export type AgentRecord = {
@@ -96,8 +128,22 @@ export type AgentPlan = {
   summary: string;
   hasFrontend: boolean;
   hasBackend: boolean;
+  needsDatabase: boolean;
+  needsServer: boolean;
+  reasoning: string;
+  pendingQuestions: string[];
+  technologyRecommendations: TechnologyRecommendation[];
   items: AgentPlanItem[];
   updatedAt: string;
+};
+
+export type TechnologyRecommendation = {
+  area: string;
+  recommended: string;
+  alternatives: string[];
+  selected?: string;
+  confirmed?: boolean;
+  reason: string;
 };
 
 export type AgentRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'stopped';

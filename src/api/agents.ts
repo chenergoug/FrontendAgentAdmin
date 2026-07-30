@@ -1,4 +1,4 @@
-import type { AgentPlan, AgentRecord, PageResult } from '../types';
+import type { AgentPlan, AgentRecord, PageResult, TechnologyRecommendation } from '../types';
 import { request, type QueryValue } from './request';
 
 export const agentApi = {
@@ -6,6 +6,8 @@ export const agentApi = {
   detail: (id: string) => request<AgentRecord | null>(`/agents/${id}`),
   plan: (projectId: string) => request<AgentPlan>('/agents/plan', {}, { projectId }),
   regeneratePlan: (projectId: string, planning: string) => request<AgentPlan>('/agents/plan', { method: 'POST', body: JSON.stringify({ projectId, planning }) }),
+  saveTechnologyRecommendations: (projectId: string, technologyRecommendations: TechnologyRecommendation[]) =>
+    request<AgentPlan>('/agents/plan', { method: 'POST', body: JSON.stringify({ projectId, technologyRecommendations }) }),
   create: (data: Partial<AgentRecord>) => request<AgentRecord>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: string, data: Partial<AgentRecord>) => request<AgentRecord>(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: string) => request<{ ok: boolean }>(`/agents/${id}`, { method: 'DELETE' }),

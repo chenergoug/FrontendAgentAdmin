@@ -90,7 +90,8 @@ function createProject(): ProjectFormValues {
     status: 'draft',
     updatedAt: '',
     description: '',
-    requirement: ''
+    requirement: '',
+    constraints: ''
   }
 }
 
@@ -235,7 +236,15 @@ export function ProjectPage() {
     }
     try {
       if (modalMode === 'create') {
-        const created = await projectApi.create(values)
+        const created = await projectApi.create({
+          name: values.name,
+          source: '新建',
+          modelName: values.modelName,
+          rootPath: values.rootPath,
+          description: values.description,
+          requirement: values.requirement,
+          constraints: values.constraints
+        })
         closeModal()
         await openProjectClient(created.id, reservedChildWindow)
         loadData()
@@ -367,9 +376,9 @@ export function ProjectPage() {
           </Button>
         )
       },
-      { title: '项目形态', dataIndex: 'shape', width: 140 },
-      { title: '项目类型', dataIndex: 'deviceType', width: 100 },
-      { title: '业务类型', dataIndex: 'businessType', width: 220, ellipsis: true },
+      { title: '项目形态', dataIndex: 'shape', width: 140, render: (value: string, item) => item.status === 'draft' ? '待 Agent 分析' : value },
+      { title: '运行平台', dataIndex: 'deviceType', width: 120, render: (value: string, item) => item.status === 'draft' ? '待 Agent 分析' : value },
+      { title: '业务类型', dataIndex: 'businessType', width: 220, ellipsis: true, render: (value: string, item) => item.status === 'draft' ? '待 Agent 分析' : value || '-' },
       { title: '项目模型', dataIndex: 'modelName', width: 180, ellipsis: true, render: (value: string) => value || '未配置' },
       {
         title: 'Git 地址',
@@ -541,9 +550,9 @@ export function ProjectPage() {
         {modalMode === 'detail' ? (
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="项目名称">{currentProject.name}</Descriptions.Item>
-            <Descriptions.Item label="项目形态">{currentProject.shape}</Descriptions.Item>
-            <Descriptions.Item label="项目类型">{currentProject.deviceType}</Descriptions.Item>
-            <Descriptions.Item label="业务类型">{currentProject.businessType}</Descriptions.Item>
+            <Descriptions.Item label="项目形态">{currentProject.status === 'draft' ? '待 Agent 分析' : currentProject.shape}</Descriptions.Item>
+            <Descriptions.Item label="运行平台">{currentProject.status === 'draft' ? '待 Agent 分析' : currentProject.deviceType}</Descriptions.Item>
+            <Descriptions.Item label="业务类型">{currentProject.status === 'draft' ? '待 Agent 分析' : currentProject.businessType}</Descriptions.Item>
             <Descriptions.Item label="项目模型">{currentProject.modelName || '未配置'}</Descriptions.Item>
             <Descriptions.Item label="项目路径" span={2}>
               {currentProject.rootPath}
@@ -580,7 +589,43 @@ export function ProjectPage() {
             <Descriptions.Item label="原始需求" span={2}>
               {currentProject.requirement}
             </Descriptions.Item>
+            <Descriptions.Item label="硬性约束" span={2}>
+              {currentProject.constraints || '-'}
+            </Descriptions.Item>
           </Descriptions>
+        ) : modalMode === 'create' ? (
+          <Form form={form} layout="vertical" className="grid-form">
+            <Form.Item name="name" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="modelName" label="项目模型" rules={[{ required: true, message: '请选择项目使用的模型' }]}>
+              <Select
+                showSearch
+                placeholder="选择子客户端分析与开发使用的模型"
+                optionFilterProp="label"
+                options={models.map((item) => ({
+                  label: `${item.name} / ${item.provider} / ${item.modelId}`,
+                  value: item.name
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="rootPath" label="项目路径" rules={[{ required: true, message: '请选择或输入项目路径' }]}>
+              <PathPickerInput placeholder="请选择或创建项目文件夹" />
+            </Form.Item>
+            <Form.Item name="description" label="项目介绍" className="wide-form-item">
+              <Input.TextArea rows={3} />
+            </Form.Item>
+            <Form.Item
+              name="requirement"
+              label="原始需求"
+              className="wide-form-item"
+              rules={[{ required: true, message: '请描述需要实现的产品和功能' }]}>
+              <Input.TextArea rows={6} />
+            </Form.Item>
+            <Form.Item name="constraints" label="硬性约束" className="wide-form-item">
+              <Input.TextArea rows={3} placeholder="例如必须支持 Windows、禁止使用云数据库、需要兼容指定浏览器" />
+            </Form.Item>
+          </Form>
         ) : (
           <Form form={form} layout="vertical" disabled={readonly} className="grid-form">
             <Form.Item name="name" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
@@ -716,7 +761,7 @@ export function ProjectPage() {
                   label="数据库密码"
                   rules={[
                     {
-                      required: modalMode === 'create' || !currentProject.databasePasswordConfigured,
+                      required: !currentProject.databasePasswordConfigured,
                       message: '请输入数据库密码'
                     }
                   ]}
@@ -748,6 +793,9 @@ export function ProjectPage() {
             </Form.Item>
             <Form.Item name="requirement" label="原始需求" className="wide-form-item">
               <Input.TextArea rows={4} />
+            </Form.Item>
+            <Form.Item name="constraints" label="硬性约束" className="wide-form-item">
+              <Input.TextArea rows={3} />
             </Form.Item>
           </Form>
         )}

@@ -204,17 +204,65 @@ export async function handleProjectsRoute(
     }
   }
 
+  if (request.method === 'PUT' && id && action === 'infrastructure') {
+    const existing = projects.find((item) => item.id === id);
+    if (!existing) {
+      send(response, 404, { message: '项目不存在' });
+      return true;
+    }
+    const body = await parseBody<ProjectMutation & { configureDatabase?: boolean; configureServer?: boolean }>(request);
+    const changes: Partial<ProjectRecord> = {};
+    if (body.configureDatabase) {
+      const fields: Array<[keyof ProjectRecord, string]> = [
+        ['databaseType', '数据库类型'], ['databaseHost', '数据库主机'], ['databasePort', '数据库端口'],
+        ['databaseName', '数据库名称'], ['databaseUsername', '数据库账号'],
+      ];
+      const missing = fields.filter(([key]) => !String(body[key] ?? '').trim()).map(([, label]) => label);
+      const passwordConfigured = Boolean(body.databasePassword?.trim()) || await hasProjectDatabasePassword(id);
+      if (!passwordConfigured) missing.push('数据库密码');
+      const port = Number(body.databasePort);
+      if (body.databasePort && (!Number.isInteger(port) || port < 1 || port > 65535)) missing.push('有效的数据库端口');
+      if (missing.length > 0) {
+        send(response, 400, { message: `请填写必填内容：${[...new Set(missing)].join('、')}` });
+        return true;
+      }
+      Object.assign(changes, Object.fromEntries(fields.map(([key]) => [key, body[key]])), { databasePasswordConfigured: true });
+      if (body.databasePassword?.trim()) await setProjectDatabasePassword(id, body.databasePassword);
+    }
+    if (body.configureServer) {
+      if (!body.serverUrl?.trim()) {
+        send(response, 400, { message: '请填写服务器地址' });
+        return true;
+      }
+      try {
+        new URL(body.serverUrl);
+      } catch {
+        send(response, 400, { message: '服务器地址格式不正确' });
+        return true;
+      }
+      changes.serverUrl = body.serverUrl.trim();
+    }
+    const updatedProject = {
+      ...existing,
+      ...changes,
+      configVersion: existing.configVersion + 1,
+      updatedAt: nowText(),
+    };
+    await writeJsonAtomic(dataPath(storagePaths.projects), projects.map((item) => item.id === id ? updatedProject : item));
+    await appendLog({ type: '项目日志', level: 'info', projectName: existing.name, title: '项目基础设施配置已更新', detail: `配置版本 v${updatedProject.configVersion}` });
+    send(response, 200, updatedProject);
+    return true;
+  }
+
   if (request.method === 'POST' && !id) {
     const body = await parseBody<ProjectMutation>(request);
     const requiredFields: Array<[keyof ProjectRecord, string]> = [
       ['name', '项目名称'],
-      ['shape', '项目形态'],
-      ['deviceType', '项目类型'],
       ['modelName', '项目模型'],
       ['rootPath', '项目路径'],
+      ['requirement', '原始需求'],
     ];
     const missingFields = requiredFields.filter(([key]) => !String(body[key] ?? '').trim()).map(([, label]) => label);
-    missingFields.push(...validateServerConfiguration(body, Boolean(body.databasePassword?.trim())));
     const modelError = validateProjectModel(body.modelName);
     if (modelError) missingFields.push(modelError);
     if (missingFields.length > 0) {
@@ -236,32 +284,31 @@ export async function handleProjectsRoute(
       businessType: body.businessType ?? '',
       modelName: body.modelName ?? '',
       rootPath: body.rootPath ?? '',
-      serverFramework: body.serverFramework ?? '',
-      serverRootPath: body.serverRootPath ?? '',
-      serverDevCommand: body.serverDevCommand ?? '',
-      serverBuildCommand: body.serverBuildCommand ?? '',
-      serverTestCommand: body.serverTestCommand ?? '',
-      databaseType: body.databaseType ?? '',
-      databaseHost: body.databaseHost ?? '',
-      databasePort: body.databasePort ?? '',
-      databaseName: body.databaseName ?? '',
-      databaseUsername: body.databaseUsername ?? '',
-      databasePasswordConfigured: body.shape !== '纯前端',
-      gitRemote: body.gitRemote ?? '',
-      branch: body.branch ?? 'develop',
-      serverUrl: body.serverUrl ?? '',
-      devCommand: body.devCommand ?? 'pnpm dev',
-      buildCommand: body.buildCommand ?? 'pnpm build',
-      lintCommand: body.lintCommand ?? 'pnpm lint',
-      testCommand: body.testCommand ?? 'pnpm test',
+      serverFramework: '',
+      serverRootPath: '',
+      serverDevCommand: '',
+      serverBuildCommand: '',
+      serverTestCommand: '',
+      databaseType: '',
+      databaseHost: '',
+      databasePort: '',
+      databaseName: '',
+      databaseUsername: '',
+      databasePasswordConfigured: false,
+      gitRemote: '',
+      branch: '',
+      serverUrl: '',
+      devCommand: '',
+      buildCommand: '',
+      lintCommand: '',
+      testCommand: '',
       configVersion: 1,
-      status: 'ready',
+      status: 'draft',
       updatedAt: nowText(),
       description: body.description ?? '',
       requirement: body.requirement ?? '',
+      constraints: body.constraints ?? '',
     };
-    if (project.shape === '纯前端') project = clearServerConfiguration(project);
-    if (body.databasePassword?.trim()) await setProjectDatabasePassword(project.id, body.databasePassword);
     await writeJsonAtomic(dataPath(storagePaths.projects), [project, ...projects]);
     await appendLog({
       type: '项目日志',
