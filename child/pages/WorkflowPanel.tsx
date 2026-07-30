@@ -13,6 +13,22 @@ const statusMeta: Record<WorkflowStageStatus, { color: string; text: string }> =
   failed: { color: 'error', text: '失败' },
 };
 
+const statusProgress: Record<WorkflowStageStatus, number> = {
+  pending: 0,
+  running: 1,
+  review: 2,
+  approved: 3,
+  failed: 3,
+};
+
+function shouldReplaceWorkflow(previous: WorkflowSnapshot | null, next: WorkflowSnapshot) {
+  if (!previous || previous.id !== next.id || previous.version !== next.version) return true;
+  if (next.updatedAt !== previous.updatedAt) return next.updatedAt > previous.updatedAt;
+  const previousProgress = previous.stages.reduce((total, stage) => total + statusProgress[stage.status], 0);
+  const nextProgress = next.stages.reduce((total, stage) => total + statusProgress[stage.status], 0);
+  return nextProgress >= previousProgress;
+}
+
 type WorkflowPanelProps = {
   project: ProjectRecord;
   initialStage: WorkflowStageKey;
@@ -39,17 +55,23 @@ export function WorkflowPanel({ project, initialStage, onOpenChanges }: Workflow
 
   const loadWorkflow = useCallback((silent = false) => {
     if (!silent) setLoading(true);
-    return Promise.all([workflowApi.detail(project.id), workflowApi.capabilities(project.id)])
-      .then(([snapshot, report]) => {
-        setWorkflow(snapshot);
-        setCapabilities(report);
+    const snapshotRequest = workflowApi.detail(project.id)
+      .then((snapshot) => {
+        setWorkflow((previous) => shouldReplaceWorkflow(previous, snapshot) ? snapshot : previous);
         const runningStage = snapshot.stages.find((stage) => stage.status === 'running');
         if (snapshot.autoMode && (runningStage || autoTransitionRef.current)) {
           setSelectedKey(runningStage?.key ?? snapshot.activeStage);
         }
         return snapshot;
-      })
+      });
+    void workflowApi.capabilities(project.id)
+      .then(setCapabilities)
       .catch((error: Error) => message.error(error.message))
+    return snapshotRequest
+      .catch((error: Error) => {
+        message.error(error.message);
+        return undefined;
+      })
       .finally(() => !silent && setLoading(false));
   }, [project.id]);
 

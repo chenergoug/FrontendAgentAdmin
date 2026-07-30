@@ -5,6 +5,7 @@ import { nowText, storagePaths } from './config.js';
 import { appendLog, dataPath, readJson, writeJsonAtomic } from './storage.js';
 import { stripAnsi } from './text-utils.js';
 import type { ProjectRecord, ProjectTaskLog, ProjectTaskRecord, ProjectTaskStatus, ProjectTaskType } from './types.js';
+import { resolveProjectCommand } from './project-command-resolver.js';
 
 type RunningTask = {
   process: ChildProcessWithoutNullStreams;
@@ -52,17 +53,6 @@ function appendTaskLog(task: RunningTask, stream: ProjectTaskLog['stream'], text
   schedulePersistTaskState();
 }
 
-function getCommand(project: ProjectRecord, type: ProjectTaskType, command?: string) {
-  if (command?.trim()) return command.trim();
-  const commands: Record<ProjectTaskType, string> = {
-    dev: project.devCommand,
-    build: project.buildCommand,
-    lint: project.lintCommand,
-    test: project.testCommand,
-  };
-  return commands[type]?.trim() ?? '';
-}
-
 function finishTask(task: RunningTask, status: ProjectTaskStatus, exitCode: number | null) {
   task.record.status = status;
   task.record.exitCode = exitCode;
@@ -94,9 +84,9 @@ export async function readTaskLogs(taskId: string) {
 }
 
 export function startProjectTask(project: ProjectRecord, type: ProjectTaskType, command?: string) {
-  const taskCommand = getCommand(project, type, command);
+  const taskCommand = resolveProjectCommand(project, type, command);
   if (!taskCommand) {
-    throw new Error('项目命令未配置');
+    throw new Error(`未找到可用的${type}命令，请检查项目 package.json scripts 或在主客户端项目配置中补充命令`);
   }
   if (!project.rootPath || !existsSync(project.rootPath)) {
     throw new Error('项目路径不存在，无法执行任务');
@@ -153,10 +143,27 @@ export function startProjectTask(project: ProjectRecord, type: ProjectTaskType, 
   return record;
 }
 
-export function waitForProjectTask(taskId: string) {
+export function waitForProjectTask(taskId: string, timeoutMs = 0) {
   const existing = history.find((item) => item.id === taskId);
   if (existing && existing.status !== 'running') return Promise.resolve(existing);
-  return new Promise<ProjectTaskRecord>((resolve) => waiters.set(taskId, resolve));
+  return new Promise<ProjectTaskRecord>((resolve) => {
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (record: ProjectTaskRecord) => {
+      if (timer) clearTimeout(timer);
+      resolve(record);
+    };
+    waiters.set(taskId, finish);
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        const task = tasks.get(taskId);
+        if (!task || task.record.status !== 'running') return;
+        appendTaskLog(task, 'system', `任务执行超过 ${Math.ceil(timeoutMs / 1000)} 秒，已自动终止。`);
+        task.record.status = 'failed';
+        task.process.kill();
+        finishTask(task, 'failed', null);
+      }, timeoutMs);
+    }
+  });
 }
 
 export function stopProjectTask(projectId: string, taskId: string) {

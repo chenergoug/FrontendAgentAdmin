@@ -46,7 +46,7 @@ async function executeValidation(project: ProjectRecord, initial: ProjectValidat
     try {
       const task = startProjectTask(project, type);
       record = await saveValidation({ ...record, taskIds: [...record.taskIds, task.id] });
-      const completed = await waitForProjectTask(task.id);
+      const completed = await waitForProjectTask(task.id, 5 * 60 * 1000);
       const logs = await readTaskLogs(task.id);
       reports.push(`## ${type}\n状态：${completed.status}\n${logs.map((item) => item.text).join('')}`);
       if (completed.status !== 'success') {

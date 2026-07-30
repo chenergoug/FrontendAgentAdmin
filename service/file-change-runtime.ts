@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { Script } from 'node:vm';
 import { nowText, storagePaths } from './config.js';
 import { startAgentRun } from './agent-runtime.js';
 import { readProjectFileTree } from './project-files.js';
@@ -79,6 +80,8 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
     task,
     '输出 JSON Schema：{"summary":"说明","files":[{"path":"相对路径","action":"create|update|delete","content":"文件完整内容"}]}。',
     '每个文件必须提供完整内容，不使用省略号。单文件不超过 500 行；页面、组件、hooks、api、types 和服务必须拆分。',
+    '所有外部 import 必须在 package.json、pubspec.yaml、go.mod、pom.xml 或对应依赖清单中声明；框架插件、路由、状态管理和测试依赖不得遗漏。',
+    '项目入口必须完整：Vite 项目包含 index.html 并正确挂载应用与路由；生成前检查配置文件引用、依赖清单和源码 import 一致。',
     '环境变量模板只能输出 .env.example，不得输出 .env 或 .env.local；禁止输出 Git 配置和依赖锁文件，禁止绝对路径与 .. 路径。',
   ].join('\n');
   const run = await startAgentRun({ projectId, agentId, input: instruction, structured: true });
@@ -93,6 +96,13 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
     if (!action || !['create', 'update', 'delete'].includes(action)) throw new Error(`文件 ${relativePath} 的操作类型无效`);
     const content = action === 'delete' ? '' : typeof raw.content === 'string' ? raw.content : JSON.stringify(raw.content ?? '', null, 2);
     if (content.length > maxFileCharacters || content.split(/\r?\n/).length > maxFileLines) throw new Error(`文件 ${relativePath} 超出单文件限制，请拆分后重新生成`);
+    if (action !== 'delete' && path.posix.basename(relativePath) === '.eslintrc.js') {
+      try {
+        new Script(content, { filename: relativePath });
+      } catch (error) {
+        throw new Error(`模型生成的 ${relativePath} 存在 JavaScript 语法错误：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     files.push({ path: relativePath, action, content, originalContent: await readOriginal(project, relativePath), selected: true });
   }
   const generatedPaths = new Set(files.map((item) => item.path.toLowerCase()));

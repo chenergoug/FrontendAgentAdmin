@@ -55,8 +55,15 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
   const [savingInfrastructure, setSavingInfrastructure] = useState(false)
   const [savingTechnology, setSavingTechnology] = useState(false)
 
-  const needsDatabaseConfiguration = Boolean(plan?.needsDatabase && !currentProject.databasePasswordConfigured)
-  const needsServerConfiguration = Boolean(plan?.needsServer && !currentProject.serverUrl)
+  const databaseConfigured = Boolean(
+    currentProject.databaseType &&
+    currentProject.databaseHost &&
+    currentProject.databasePort &&
+    currentProject.databaseName &&
+    currentProject.databaseUsername &&
+    currentProject.databasePasswordConfigured
+  )
+  const serverConfigured = Boolean(currentProject.serverUrl)
 
   const loadPlan = useCallback(() => {
     setLoading(true)
@@ -72,6 +79,22 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
 
   useEffect(() => loadPlan(), [loadPlan])
 
+  const openInfrastructureConfiguration = (capabilities = plan) => {
+    if (!capabilities) return
+    infrastructureForm.setFieldsValue({
+      configureDatabase: capabilities.needsDatabase,
+      configureServer: capabilities.needsServer,
+      databaseType: currentProject.databaseType || 'MySQL',
+      databaseHost: currentProject.databaseHost || '127.0.0.1',
+      databasePort: currentProject.databasePort || '3306',
+      databaseName: currentProject.databaseName,
+      databaseUsername: currentProject.databaseUsername,
+      databasePassword: undefined,
+      serverUrl: currentProject.serverUrl,
+    })
+    setInfrastructureOpen(true)
+  }
+
   const regeneratePlan = async () => {
     const now = Date.now()
     if (generatingRef.current || now - lastGenerateAtRef.current < 800) return
@@ -84,26 +107,16 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
     setGenerating(true)
     try {
       const workflow = await workflowApi.detail(project.id)
-      if (workflow.stages.some((stage) => stage.status !== 'pending')) {
-        message.warning('开发工作流已经开始，不能重新生成 Agent 清单；请先处理当前工作流')
+      if (workflow.stages.some((stage) => stage.status === 'running')) {
+        message.warning('开发工作流正在执行，不能重新生成 Agent 清单；请等待当前节点结束或先停止工作流')
         return
       }
       const previous = plan
       const result = await agentApi.regeneratePlan(project.id, planning.trim())
       setPlan(result)
       setPlanning(result.planning)
-      if ((result.needsDatabase && !currentProject.databasePasswordConfigured) || (result.needsServer && !currentProject.serverUrl)) {
-        infrastructureForm.setFieldsValue({
-          configureDatabase: result.needsDatabase,
-          configureServer: result.needsServer,
-          databaseType: currentProject.databaseType || 'MySQL',
-          databaseHost: currentProject.databaseHost || '127.0.0.1',
-          databasePort: currentProject.databasePort || '3306',
-          databaseName: currentProject.databaseName,
-          databaseUsername: currentProject.databaseUsername,
-          serverUrl: currentProject.serverUrl,
-        })
-        setInfrastructureOpen(true)
+      if ((result.needsDatabase && !databaseConfigured) || (result.needsServer && !serverConfigured)) {
+        openInfrastructureConfiguration(result)
       }
       const capabilityChanged = previous ? (
         previous.hasFrontend !== result.hasFrontend ||
@@ -317,10 +330,14 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
                 <Tag color={plan.hasBackend ? 'blue' : 'default'}>{plan.hasBackend ? '需要' : '不需要'}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="数据库">
-                <Tag color={plan.needsDatabase ? 'orange' : 'default'}>{plan.needsDatabase ? '需要配置' : '暂不需要'}</Tag>
+                <Tag color={plan.needsDatabase ? (databaseConfigured ? 'success' : 'orange') : 'default'}>
+                  {plan.needsDatabase ? (databaseConfigured ? '已配置' : '需要配置') : '暂不需要'}
+                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="服务器">
-                <Tag color={plan.needsServer ? 'orange' : 'default'}>{plan.needsServer ? '需要配置' : '暂不需要'}</Tag>
+                <Tag color={plan.needsServer ? (serverConfigured ? 'success' : 'orange') : 'default'}>
+                  {plan.needsServer ? (serverConfigured ? '已配置' : '需要配置') : '暂不需要'}
+                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="分析依据" span={4}>{plan.reasoning}</Descriptions.Item>
               <Descriptions.Item label="待用户确认" span={4}>
@@ -330,9 +347,11 @@ export function AgentWorkspacePanel({ project }: AgentWorkspacePanelProps) {
               </Descriptions.Item>
             </Descriptions>
           ) : null}
-          {(needsDatabaseConfiguration || needsServerConfiguration) ? (
-            <Button style={{ marginTop: 16 }} onClick={() => setInfrastructureOpen(true)}>
-              完善数据库与服务器配置
+          {(plan?.needsDatabase || plan?.needsServer) ? (
+            <Button style={{ marginTop: 16 }} onClick={() => openInfrastructureConfiguration()}>
+              {plan.needsDatabase && plan.needsServer
+                ? '配置数据库与服务器'
+                : plan.needsDatabase ? '配置数据库' : '配置服务器'}
             </Button>
           ) : null}
         </Card>

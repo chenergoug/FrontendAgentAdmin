@@ -31,8 +31,8 @@ export async function handleAgentsRoute(request: http.IncomingMessage, response:
     const projectId = body.projectId ?? '';
     const workflowSnapshots = await readJson<Array<{ projectId: string; stages?: Array<{ status?: string }> }>>(storagePaths.workflowSnapshots, []);
     const workflow = workflowSnapshots.find((item) => item.projectId === projectId);
-    if (workflow?.stages?.some((stage) => stage.status !== 'pending')) {
-      send(response, 409, { message: '开发工作流已经开始，不能重新生成 Agent 清单；请先在开发流程中完成或归档当前工作流' });
+    if (workflow?.stages?.some((stage) => stage.status === 'running')) {
+      send(response, 409, { message: '开发工作流正在执行，不能重新生成 Agent 清单；请等待当前节点结束或先停止工作流' });
       return true;
     }
     if (regeneratingProjectPlans.has(projectId)) {

@@ -35,8 +35,8 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
     [project.id],
   );
 
-  const loadTasks = useCallback(() => {
-    Promise.all([projectApi.taskList(project.id), projectApi.validationList(project.id)])
+  const loadTasks = useCallback(async () => {
+    return Promise.all([projectApi.taskList(project.id), projectApi.validationList(project.id)])
       .then(([result, validationResult]) => {
         setValidations(validationResult.list);
         setTasks(result.list);
@@ -56,10 +56,12 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
   }, [loadTasks]);
 
   useEffect(() => {
-    if (!tasks.some((task) => task.status === 'running')) return;
+    const hasRunningTask = tasks.some((task) => task.status === 'running');
+    const hasRunningValidation = validations.some((validation) => validation.status === 'running');
+    if (!hasRunningTask && !hasRunningValidation) return;
     const timer = window.setInterval(loadTasks, 2000);
     return () => window.clearInterval(timer);
-  }, [loadTasks, tasks]);
+  }, [loadTasks, tasks, validations]);
 
   const start = (type: ProjectTaskType) => {
     setLoading(true);
@@ -116,13 +118,17 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
 
   const availableTypes: ProjectTaskType[] = mode === 'runtime' ? ['dev'] : ['build', 'lint', 'test'];
   const latestValidation = validations[0];
+  const repeatedFailureCount = latestValidation?.status === 'failed'
+    ? validations.filter((item) => item.status === 'failed' && item.currentStep === latestValidation.currentStep).length
+    : 0;
 
   const startValidation = async () => {
     setLoading(true);
     try {
-      await projectApi.startValidation(project.id);
+      const validation = await projectApi.startValidation(project.id);
+      setValidations((current) => [validation, ...current.filter((item) => item.id !== validation.id)]);
       message.success('一键验证已启动');
-      loadTasks();
+      await loadTasks();
     } catch (error) {
       message.error((error as Error).message);
     } finally {
@@ -134,7 +140,17 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
     if (!latestValidation?.report) return;
     setLoading(true);
     try {
-      const result = await fileChangeApi.generate({ projectId: project.id, agentId: 'a-debug', task: `修复以下验证失败问题：\n\n${latestValidation.report}` });
+      const result = await fileChangeApi.generate({
+        projectId: project.id,
+        agentId: 'a-debug',
+        task: [
+          `修复以下验证失败问题：\n\n${latestValidation.report}`,
+          repeatedFailureCount > 1
+            ? `同一 ${latestValidation.currentStep} 步骤已连续失败 ${repeatedFailureCount} 次。不得重复之前的无效修改；必须读取当前文件并检查配置语法、依赖声明和工具版本兼容性。`
+            : '',
+          '输出前必须确认修改后的配置文件语法有效，并从根因上解决日志中的首个错误。',
+        ].filter(Boolean).join('\n\n'),
+      });
       message.success(`已生成 ${result.files.length} 个修复文件`);
       onOpenChanges?.();
     } catch (error) {
@@ -166,6 +182,14 @@ export function TaskPanel({ project, mode, onOpenChanges }: TaskPanelProps) {
           message={`一键验证：${latestValidation.status}${latestValidation.currentStep ? ` · ${latestValidation.currentStep}` : ''}`}
           description={latestValidation.status === 'failed' ? '验证已在失败步骤停止，可生成修复变更后重新执行。' : undefined}
           action={latestValidation.status === 'failed' ? <Button icon={<ToolOutlined />} onClick={generateFix}>生成修复变更</Button> : undefined}
+        />
+      ) : null}
+      {mode === 'build' && repeatedFailureCount >= 2 ? (
+        <Alert
+          type="warning"
+          showIcon
+          message={`${latestValidation?.currentStep} 已连续失败 ${repeatedFailureCount} 次`}
+          description="后续修复会携带历史失败次数并要求更换修复方案，避免重复生成相同的无效变更。"
         />
       ) : null}
       <Card title="任务列表">
