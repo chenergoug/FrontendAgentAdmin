@@ -20,6 +20,21 @@ type OllamaGenerateResponse = {
   eval_count?: number;
 };
 
+function ollamaErrorText(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const nested = record.message ?? record.detail ?? record.error;
+    if (nested !== undefined && nested !== value) return ollamaErrorText(nested);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return value == null ? '' : String(value);
+}
+
 function normalizeBaseUrl(baseUrl?: string) {
   return (baseUrl || defaultOllamaBaseUrl).replace(/\/$/, '');
 }
@@ -86,9 +101,9 @@ export async function generateWithOllama(input: {
     signal: AbortSignal.timeout(Math.max(10, input.timeoutSeconds ?? 120) * 1000),
   });
 
-  const data = (await response.json().catch(() => ({}))) as OllamaGenerateResponse & { error?: string };
+  const data = (await response.json().catch(() => ({}))) as OllamaGenerateResponse & { error?: unknown };
   if (!response.ok) {
-    throw new Error(data.error || `Ollama generate request failed: ${response.status}`);
+    throw new Error(ollamaErrorText(data.error) || `Ollama generate request failed: HTTP ${response.status}`);
   }
 
   return {

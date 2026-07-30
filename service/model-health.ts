@@ -14,7 +14,15 @@ export async function checkModelHealth(model: ModelRecord): Promise<ModelRecord>
       healthy = false;
     }
   } else {
-    healthy = Boolean(model.baseUrl && model.modelId);
+    try {
+      const response = await fetch(model.baseUrl, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000),
+      });
+      healthy = response.ok || [400, 401, 403, 405].includes(response.status);
+    } catch {
+      healthy = false;
+    }
   }
   return { ...model, healthy, checkedAt: nowText() };
 }

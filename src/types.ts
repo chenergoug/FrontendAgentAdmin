@@ -197,6 +197,16 @@ export type OllamaStatus = {
   models: OllamaModelTag[];
 };
 
+export type OllamaSetupStatus = OllamaStatus & {
+  supported: boolean;
+  platform: string;
+  executable: string;
+  modelId: string;
+  modelInstalled: boolean;
+  installing: boolean;
+  message: string;
+};
+
 export type SettingRecord = {
   id: string;
   group: string;

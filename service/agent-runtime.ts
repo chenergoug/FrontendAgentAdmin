@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { nowText, storagePaths } from './config.js';
 import { createDefaultAgents } from './default-agents.js';
-import { generateWithOllama } from './ollama-client.js';
+import { generateWithModel, normalizeModelError } from './model-client.js';
 import { readProjectFileTree } from './project-files.js';
 import { buildProjectSourceContext } from './project-context.js';
 import { createRecoveryItem } from './recovery-runtime.js';
@@ -204,9 +204,8 @@ export async function startAgentRun(input: StartAgentRunInput) {
   await writeJsonAtomic(dataPath(storagePaths.agentRunLogs), logs);
 
   try {
-    const result = await generateWithOllama({
-      baseUrl: model.baseUrl,
-      modelId: model.modelId,
+    const result = await generateWithModel({
+      model,
       system: [
         agent.prompt,
         `上下文使用规则：\n${(agent.contextRules ?? []).map((item) => `- ${item}`).join('\n') || '- 仅使用当前任务提供的可靠上下文。'}`,
@@ -214,8 +213,6 @@ export async function startAgentRun(input: StartAgentRunInput) {
         `质量门禁：\n${(agent.qualityGates ?? []).map((item) => `- ${item}`).join('\n') || '- 输出前检查事实、完整性和风险。'}`,
       ].join('\n\n'),
       prompt: await buildPrompt(project, input.input, input.structured, ['前端开发', '后端开发', '代码审核', '调试修复', '测试构建'].includes(agent.category)),
-      contextWindow: model.contextWindow,
-      timeoutSeconds: model.timeout,
       json: input.structured,
     });
 
@@ -245,7 +242,7 @@ export async function startAgentRun(input: StartAgentRunInput) {
     const failed: AgentRunRecord = {
       ...run,
       status: 'failed',
-      error: error instanceof Error ? error.message : String(error),
+      error: normalizeModelError(error, model),
       endedAt: nowText(),
     };
     const latestRuns = await readJson<AgentRunRecord[]>(storagePaths.agentRuns, []);
