@@ -1,6 +1,7 @@
 import { ExportOutlined, ImportOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Button,
+  Alert,
   Card,
   Descriptions,
   Flex,
@@ -14,6 +15,7 @@ import {
   Switch,
   Table,
   Tag,
+  Typography,
   Upload,
   message
 } from 'antd'
@@ -22,7 +24,7 @@ import type { Key } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { modelApi, ollamaApi } from '../api'
 import { TableToolbar } from '../components/TableToolbar'
-import type { ModelRecord, OllamaModelTag, PageResult } from '../types'
+import type { ModelRecord, OllamaModelTag, OllamaSetupStatus, PageResult } from '../types'
 import { downloadJson, exportSelectionFilename, readJsonFile, showImportError } from '../utils/transfer'
 import {
   tableCardBodyStyle,
@@ -72,6 +74,9 @@ export function ModelPage() {
   const [localScanComplete, setLocalScanComplete] = useState(false)
   const [data, setData] = useState<PageResult<ModelRecord>>({ list: [], total: 0, page: 1, pageSize: 10 })
   const [ollamaModels, setOllamaModels] = useState<OllamaModelTag[]>([])
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [setupStatus, setSetupStatus] = useState<OllamaSetupStatus | null>(null)
+  const [checkingSetup, setCheckingSetup] = useState(false)
   const provider = Form.useWatch('provider', form)
   const modelType = Form.useWatch('type', form)
   const { tableWrapperRef, scrollY } = useTableScrollY([data.list.length, loading, page, pageSize])
@@ -146,6 +151,26 @@ export function ModelPage() {
       loadData()
     } catch (error) {
       message.error((error as Error).message)
+    }
+  }
+
+  const inspectAndSyncOllama = async () => {
+    setCheckingSetup(true)
+    try {
+      const status = await ollamaApi.setup()
+      setSetupStatus(status)
+      if (status.installed && status.running && status.modelInstalled) {
+        await modelApi.syncOllamaDefault()
+        message.success('Ollama 与默认模型已检测并同步')
+        setSetupOpen(false)
+        loadData()
+        return
+      }
+      setSetupOpen(true)
+    } catch (error) {
+      message.error((error as Error).message)
+    } finally {
+      setCheckingSetup(false)
     }
   }
 
@@ -291,8 +316,8 @@ export function ModelPage() {
         <Button icon={<ExportOutlined />} onClick={exportModels}>
           导出模型
         </Button>
-        <Button onClick={() => runAction(() => modelApi.syncOllamaDefault(), 'Ollama 默认模型已同步')}>
-          同步 Ollama 默认模型
+        <Button loading={checkingSetup} onClick={() => void inspectAndSyncOllama()}>
+          扫描并添加 Ollama 模型
         </Button>
         <Button
           onClick={() =>
@@ -335,6 +360,67 @@ export function ModelPage() {
           />
         </Card>
       </div>
+      <Modal
+        title="Ollama 本地模型配置教程"
+        open={setupOpen}
+        centered
+        onCancel={() => setSetupOpen(false)}
+        width={720}
+        footer={[
+          <Button key="close" onClick={() => setSetupOpen(false)}>
+            关闭
+          </Button>,
+          <Button
+            key="scan"
+            type="primary"
+            loading={checkingSetup}
+            onClick={() => void inspectAndSyncOllama()}>
+            重新扫描并添加
+          </Button>
+        ]}>
+        <Alert
+          showIcon
+          type="warning"
+          message="本地运行环境不完整"
+          description="平台只负责扫描和添加模型配置。请在系统终端中完成以下步骤，安装结束后点击“重新扫描并添加”。"
+        />
+        <Descriptions bordered size="small" column={1} style={{ marginTop: 16 }}>
+          <Descriptions.Item label="操作系统">{setupStatus?.platform || '-'}</Descriptions.Item>
+          <Descriptions.Item label="Ollama 程序">
+            <Tag color={setupStatus?.installed ? 'green' : 'red'}>{setupStatus?.installed ? '已安装' : '未安装'}</Tag>
+            {setupStatus?.version || ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Ollama 服务">
+            <Tag color={setupStatus?.running ? 'green' : 'orange'}>{setupStatus?.running ? '运行中' : '未运行'}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="默认模型">
+            <Tag color={setupStatus?.modelInstalled ? 'green' : setupStatus?.running ? 'red' : 'orange'}>
+              {setupStatus?.modelInstalled ? '已安装' : setupStatus?.running ? '未安装' : '待服务启动后检测'}
+            </Tag>
+            {setupStatus?.modelId || 'qwen2.5-coder:7b'}
+          </Descriptions.Item>
+        </Descriptions>
+        <Typography.Title level={5} style={{ marginTop: 20 }}>安装步骤</Typography.Title>
+        {setupStatus?.platform === 'darwin' ? (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text>1. 安装 Ollama</Typography.Text>
+            <Typography.Paragraph code copyable>brew install --cask ollama</Typography.Paragraph>
+            <Typography.Text>2. 启动 Ollama</Typography.Text>
+            <Typography.Paragraph code copyable>open -a Ollama</Typography.Paragraph>
+            <Typography.Text>3. 下载默认模型</Typography.Text>
+            <Typography.Paragraph code copyable>ollama pull qwen2.5-coder:7b</Typography.Paragraph>
+          </Space>
+        ) : (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text>1. 使用 PowerShell 安装 Ollama</Typography.Text>
+            <Typography.Paragraph code copyable>winget install --id Ollama.Ollama -e</Typography.Paragraph>
+            <Typography.Text>2. 从开始菜单启动 Ollama，或在 PowerShell 启动服务</Typography.Text>
+            <Typography.Paragraph code copyable>ollama serve</Typography.Paragraph>
+            <Typography.Text>3. 新开一个 PowerShell 窗口下载默认模型</Typography.Text>
+            <Typography.Paragraph code copyable>ollama pull qwen2.5-coder:7b</Typography.Paragraph>
+          </Space>
+        )}
+      </Modal>
       <Modal
         title={modalMode === 'create' ? '新增模型' : modalMode === 'edit' ? '编辑模型' : '模型详情'}
         open={modalMode !== null}

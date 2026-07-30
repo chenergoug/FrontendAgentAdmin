@@ -203,7 +203,6 @@ export type OllamaSetupStatus = OllamaStatus & {
   executable: string;
   modelId: string;
   modelInstalled: boolean;
-  installing: boolean;
   message: string;
 };
 
