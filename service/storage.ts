@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, readdir, rename, unlink, writeFile } from 
 import path from 'node:path';
 import { defaultDataDir, nowText, storagePaths } from './config.js';
 import { createSeedSettings, seedAgentUsage, seedAgents, seedLogs, seedModelUsage, seedModels, seedProjects, seedRecovery } from './seeds.js';
-import type { AgentRecord, AgentRunRecord, LogRecord, WorkflowSnapshot } from './types.js';
+import type { AgentRecord, AgentRunRecord, LogRecord, ProjectRecord, WorkflowSnapshot } from './types.js';
 import { normalizeModelRecord } from './model-capabilities.js';
 
 export function dataPath(relativePath: string) {
@@ -175,6 +175,7 @@ export async function bootstrapStorage() {
     ...project,
     modelName: project.modelName || fallbackModelName,
     constraints: project.constraints || '',
+    status: project.status === 'running' ? 'ready' : project.status,
   }));
   if (JSON.stringify(projects) !== JSON.stringify(storedProjects)) {
     await writeJsonAtomic(dataPath(storagePaths.projects), projects);

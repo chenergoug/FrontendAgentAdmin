@@ -45,6 +45,56 @@ type TechnologyRecommendation = {
 };
 
 const capabilitySchemaVersion = 2;
+const explicitDatabaseSignals = [
+  /mysql/i,
+  /postgres(?:ql)?/i,
+  /sqlite/i,
+  /mongodb/i,
+  /mariadb/i,
+  /redis/i,
+  /sql\b/i,
+  /database/i,
+  /db_name/i,
+  /数据库/,
+  /数据表/,
+  /建表/,
+  /连接数据库/,
+  /读取\s*mysql/i,
+  /数据库名称/,
+  /持久化/,
+  /用户表/,
+  /商品表/,
+  /测试数据/,
+];
+
+function explicitDatabaseRequired(project: ProjectRecord, planning: string) {
+  const text = [
+    project.name,
+    project.description,
+    project.requirement,
+    project.constraints,
+    planning,
+    project.databaseType,
+    project.databaseName,
+  ].filter(Boolean).join('\n');
+  return explicitDatabaseSignals.some((pattern) => pattern.test(text));
+}
+
+function explicitBackendRuntime(project: ProjectRecord, planning: string) {
+  const text = [
+    project.description,
+    project.requirement,
+    project.constraints,
+    planning,
+    project.serverFramework,
+  ].filter(Boolean).join('\n');
+  if (/(?:非|不使用|不要|不用)\s*node/i.test(text) && /java/i.test(text)) return 'Java';
+  if (/\bjava\b|spring\s*boot|jdk/i.test(text)) return 'Java';
+  if (/\bgo\b|golang|gin\b/i.test(text)) return 'Go';
+  if (/python|fastapi|django|flask/i.test(text)) return 'Python';
+  if (/node|express|nestjs|koa/i.test(text)) return 'Node.js';
+  return '';
+}
 
 function normalizeTechnologyRecommendations(items: TechnologyRecommendation[]) {
   return items.map((item) => ({
@@ -65,6 +115,51 @@ function mergeConfirmedTechnologyRecommendations(next: TechnologyRecommendation[
     const saved = confirmed.get(item.area);
     return saved ? { ...item, selected: saved.selected, confirmed: true } : item;
   });
+}
+
+function applyDeterministicCapabilityOverrides(project: ProjectRecord, planning: string, analysis: CapabilityAnalysis): CapabilityAnalysis {
+  const backendRuntime = explicitBackendRuntime(project, planning);
+  const needsDatabase = explicitDatabaseRequired(project, planning);
+  if (!needsDatabase && !backendRuntime) return analysis;
+  const next: CapabilityAnalysis = {
+    ...analysis,
+    hasBackend: analysis.hasBackend || Boolean(backendRuntime) || needsDatabase,
+    needsDatabase: analysis.needsDatabase || needsDatabase,
+    reasoning: analysis.reasoning.includes('数据库')
+      ? analysis.reasoning
+      : `${analysis.reasoning}\n\n服务端校验：需求或项目配置中明确出现数据库/SQL/测试数据等信息，已将 needsDatabase 修正为 true，并补充后端开发能力。`,
+  };
+  if (backendRuntime && backendRuntime !== 'Node.js') {
+    const backendAreaPattern = /后端|服务端|backend|server/i;
+    const runtimeRecommendation: TechnologyRecommendation = {
+      area: '后端运行时与框架',
+      recommended: backendRuntime === 'Java' ? 'Java JDK HttpServer' : backendRuntime,
+      alternatives: backendRuntime === 'Java' ? ['Spring Boot', 'Quarkus'] : ['Node.js + Express', 'Java Spring Boot'],
+      selected: backendRuntime === 'Java' ? 'Java JDK HttpServer' : backendRuntime,
+      confirmed: false,
+      reason: `需求中明确指定 ${backendRuntime} 或排除了 Node，已按显式约束修正后端选型。`,
+    };
+    const withoutConflictingBackend = next.technologyRecommendations.filter((item) => !backendAreaPattern.test(item.area));
+    next.technologyRecommendations = [runtimeRecommendation, ...withoutConflictingBackend];
+    if (!next.reasoning.includes(backendRuntime)) {
+      next.reasoning = `${next.reasoning}\n\n服务端校验：需求中明确指定 ${backendRuntime} 或排除了 Node，已修正后端技术选型，避免生成错误运行环境。`;
+    }
+  }
+  const hasDatabaseRecommendation = next.technologyRecommendations.some((item) => /数据库|database|mysql|sql/i.test(item.area) || /mysql|postgres|sqlite|mongodb|database|数据库/i.test(item.recommended));
+  if (needsDatabase && !hasDatabaseRecommendation) {
+    next.technologyRecommendations = [
+      ...next.technologyRecommendations,
+      {
+        area: '数据库',
+        recommended: project.databaseType || 'MySQL',
+        alternatives: ['PostgreSQL', 'SQLite'],
+        selected: project.databaseType || 'MySQL',
+        confirmed: false,
+        reason: '需求或项目配置中明确要求数据库支持，默认推荐 MySQL，用户可在技术选型中调整。',
+      },
+    ];
+  }
+  return next;
 }
 
 function parseCapabilityAnalysis(text: string): CapabilityAnalysis {
@@ -223,6 +318,7 @@ export async function getProjectAgentPlan(projectId: string, nextPlanning?: stri
       cancellation.release();
     }
   }
+  analysis = applyDeterministicCapabilityOverrides(project, planning, analysis);
   analysis.technologyRecommendations = mergeConfirmedTechnologyRecommendations(
     normalizeTechnologyRecommendations(analysis.technologyRecommendations),
     savedPlan?.analysis?.technologyRecommendations,

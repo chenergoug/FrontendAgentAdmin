@@ -7,7 +7,7 @@ import { startAgentRun } from './agent-runtime.js';
 import { readProjectFileTree } from './project-files.js';
 import { dataPath, readJson, writeJsonAtomic } from './storage.js';
 import type { FileChangeAction, FileChangeItem, FileChangeSet, ProjectFileNode, ProjectRecord } from './types.js';
-import { createBasicAdminTemplate, createDroneReactTemplate, createVueExpressMysqlBackendTemplate, createVueExpressMysqlTemplate } from './project-templates.js';
+import { createBasicAdminTemplate, createDroneReactTemplate, createVueExpressMysqlBackendTemplate, createVueExpressMysqlTemplate, createVueJavaMysqlBackendTemplate, createVueJavaMysqlTemplate } from './project-templates.js';
 
 const blockedPaths = new Set(['.env', '.env.local', '.git/config', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock']);
 const maxFiles = 100;
@@ -93,6 +93,15 @@ export async function listFileChangeSets(projectId?: string) {
   return projectId ? all.filter((item) => item.projectId === projectId) : all;
 }
 
+function shouldUseJavaBackendTemplate(projectContext: string) {
+  return /(?:^|[^\w])java(?:[^\w]|$)|jdk|spring\s*boot|(?:非|不使用|不要|不用)\s*node/i.test(projectContext);
+}
+
+function shouldUseDatabaseTemplate(projectContext: string, project: ProjectRecord) {
+  return Boolean(project.databaseType || project.databaseName)
+    || /mysql|postgres(?:ql)?|sqlite|mongodb|mariadb|sql\b|database|数据库|数据表|建表|连接数据库|测试数据|持久化|全栈|后端|服务端|前后端/i.test(projectContext);
+}
+
 export async function generateFileChangeSet(projectId: string, agentId: string, task: string, requiredPaths: string[] = []) {
   const projects = await readJson<ProjectRecord[]>(storagePaths.projects, []);
   const project = projects.find((item) => item.id === projectId);
@@ -111,6 +120,16 @@ export async function generateFileChangeSet(projectId: string, agentId: string, 
     project.databaseName,
     project.serverUrl,
   ].filter(Boolean).join('\n');
+  const cleanNeedsJavaBackend = shouldUseJavaBackendTemplate(projectContext);
+  const cleanNeedsFullstackDatabase = shouldUseDatabaseTemplate(projectContext, project);
+  if (agentId === 'a-frontend' && !projectHasFiles && cleanNeedsJavaBackend && cleanNeedsFullstackDatabase) {
+    const files = createVueJavaMysqlTemplate(project.databaseName || 'frontend_agent_admin_java_demo');
+    return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-vue-java-mysql', summary: 'Vue 3 + Java + MySQL 非 Node 后端基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+  }
+  if (agentId === 'a-backend' && cleanNeedsJavaBackend && cleanNeedsFullstackDatabase) {
+    const files = createVueJavaMysqlBackendTemplate(project.databaseName || 'frontend_agent_admin_java_demo');
+    return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-vue-java-mysql-backend', summary: 'Java + MySQL 非 Node 后端基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });
+  }
   if (agentId === 'a-frontend' && !projectHasFiles && /无人机|WebGL|Three\.js/i.test(task)) {
     const files = createDroneReactTemplate();
     return saveChangeSet({ id: `fc-${randomUUID()}`, projectId, projectName: project.name, agentRunId: 'template-react-drone', summary: 'React + Ant Design + Three.js 无人机项目基线模板', status: 'pending', files, error: '', createdAt: nowText(), appliedAt: '' });

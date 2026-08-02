@@ -39,18 +39,15 @@ function resolveNodeCommand(projectRoot: string, root: string, type: ProjectTask
   const manifest = readManifest(root);
   if (!manifest) return '';
   const manager = packageManager(root);
-  const hasNodeDependencies = Object.keys(manifest.dependencies ?? {}).length > 0
-    || Object.keys(manifest.devDependencies ?? {}).length > 0;
-  const install = hasNodeDependencies && !existsSync(path.join(root, 'node_modules')) ? `${manager} install && ` : '';
   const script = scriptCandidates[type].find((candidate) => manifest.scripts?.[candidate]);
-  if (script) return inDirectory(projectRoot, root, `${install}${manager} run ${script}`);
+  if (script) return inDirectory(projectRoot, root, `${manager} run ${script}`);
 
   const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
-  if (type === 'dev' && dependencies.vite) return inDirectory(projectRoot, root, `${install}${manager} exec vite`);
-  if (type === 'dev' && dependencies.electron) return inDirectory(projectRoot, root, `${install}${manager} exec electron .`);
-  if (type === 'build' && dependencies.vite) return inDirectory(projectRoot, root, `${install}${manager} exec vite build`);
-  if (type === 'lint' && dependencies.eslint) return inDirectory(projectRoot, root, `${install}${manager} exec eslint .`);
-  if (type === 'test' && dependencies.vitest) return inDirectory(projectRoot, root, `${install}${manager} exec vitest run`);
+  if (type === 'dev' && dependencies.vite) return inDirectory(projectRoot, root, `${manager} exec vite`);
+  if (type === 'dev' && dependencies.electron) return inDirectory(projectRoot, root, `${manager} exec electron .`);
+  if (type === 'build' && dependencies.vite) return inDirectory(projectRoot, root, `${manager} exec vite build`);
+  if (type === 'lint' && dependencies.eslint) return inDirectory(projectRoot, root, `${manager} exec eslint .`);
+  if (type === 'test' && dependencies.vitest) return inDirectory(projectRoot, root, `${manager} exec vitest run`);
   return '';
 }
 

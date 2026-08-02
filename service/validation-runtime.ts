@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { nowText, storagePaths } from './config.js';
 import { dataPath, readJson, writeJsonAtomic } from './storage.js';
 import { readTaskLogs, startProjectTask, waitForProjectTask } from './task-manager.js';
@@ -7,6 +9,45 @@ import type { ProjectRecord, ProjectTaskType, ProjectValidationRecord } from './
 import { createRecoveryItem } from './recovery-runtime.js';
 
 const activeValidationIds = new Set<string>();
+
+type PackageManifest = {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+};
+
+function packageManager(rootPath: string) {
+  if (existsSync(path.join(rootPath, 'pnpm-lock.yaml'))) return 'pnpm';
+  if (existsSync(path.join(rootPath, 'yarn.lock'))) return 'yarn';
+  if (existsSync(path.join(rootPath, 'bun.lockb')) || existsSync(path.join(rootPath, 'bun.lock'))) return 'bun';
+  return 'npm';
+}
+
+function inDirectory(projectRoot: string, commandRoot: string, command: string) {
+  if (path.resolve(projectRoot) === path.resolve(commandRoot)) return command;
+  return `cd ${JSON.stringify(path.relative(projectRoot, commandRoot))} && ${command}`;
+}
+
+function hasPackageDependencies(root: string) {
+  try {
+    const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as PackageManifest;
+    return Object.keys(manifest.dependencies ?? {}).length > 0 || Object.keys(manifest.devDependencies ?? {}).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function dependencyInstallCommands(project: ProjectRecord) {
+  if (!project.rootPath || !existsSync(project.rootPath)) return [];
+  const roots = [
+    project.rootPath,
+    path.join(project.rootPath, 'frontend'),
+    path.join(project.rootPath, 'client'),
+    path.join(project.rootPath, 'app'),
+  ];
+  return [...new Set(roots)]
+    .filter((root) => existsSync(path.join(root, 'package.json')) && hasPackageDependencies(root) && !existsSync(path.join(root, 'node_modules')))
+    .map((root) => inDirectory(project.rootPath, root, `${packageManager(root)} install`));
+}
 
 async function saveValidation(record: ProjectValidationRecord) {
   const all = await readJson<ProjectValidationRecord[]>(storagePaths.validations, []);
@@ -41,6 +82,32 @@ export async function startValidation(project: ProjectRecord) {
 async function executeValidation(project: ProjectRecord, initial: ProjectValidationRecord) {
   let record = initial;
   const reports: string[] = [];
+  const installCommands = dependencyInstallCommands(project);
+  if (installCommands.length > 0) {
+    for (const command of installCommands) {
+      try {
+        const task = startProjectTask(project, 'test', command);
+        record = await saveValidation({ ...record, taskIds: [...record.taskIds, task.id] });
+        const completed = await waitForProjectTask(task.id, 5 * 60 * 1000);
+        const logs = await readTaskLogs(task.id);
+        reports.push(`## dependencies\n状态：${completed.status}\n${logs.map((item) => item.text).join('')}`);
+        if (completed.status !== 'success') {
+          record = await saveValidation({ ...record, status: 'failed', currentStep: 'test', report: reports.join('\n\n'), endedAt: nowText() });
+          await updateWorkflowStage(project.id, 'test', record.report);
+          await createRecoveryItem({ type: '失败任务', projectName: project.name, title: '项目依赖安装失败', detail: record.report, severity: '中' });
+          return;
+        }
+      } catch (error) {
+        reports.push(`## dependencies\n启动失败：${error instanceof Error ? error.message : String(error)}`);
+        record = await saveValidation({ ...record, status: 'failed', currentStep: 'test', report: reports.join('\n\n'), endedAt: nowText() });
+        await updateWorkflowStage(project.id, 'test', record.report);
+        await createRecoveryItem({ type: '失败任务', projectName: project.name, title: '项目依赖安装启动失败', detail: record.report, severity: '中' });
+        return;
+      }
+    }
+  } else {
+    reports.push('## dependencies\n状态：skipped\n未发现需要安装的 Node 依赖，或依赖已安装。');
+  }
   for (const type of ['lint', 'test', 'build'] as ProjectTaskType[]) {
     record = await saveValidation({ ...record, currentStep: type });
     try {
