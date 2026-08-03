@@ -578,7 +578,7 @@ public class Main {
       return;
     }
     String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-    if (!body.contains("\\\"username\\\":\\\"admin\\\"") || !body.contains("\\\"password\\\":\\\"123456\\\"")) {
+    if (!hasJsonValue(body, "username", "admin") || !hasJsonValue(body, "password", "123456")) {
       json(exchange, 401, "{\\\"message\\\":\\\"Invalid credentials\\\"}");
       return;
     }
@@ -652,6 +652,12 @@ public class Main {
 
   private static String escape(String value) {
     return value.replace("\\\\", "\\\\\\\\");
+  }
+
+  private static boolean hasJsonValue(String body, String key, String value) {
+    String escapedKey = java.util.regex.Pattern.quote(key);
+    String escapedValue = java.util.regex.Pattern.quote(value);
+    return java.util.regex.Pattern.compile("\\\"" + escapedKey + "\\\"\\\\s*:\\\\s*\\\"" + escapedValue + "\\\"").matcher(body).find();
   }
 
   private static String env(String key, String fallback) {

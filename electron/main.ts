@@ -2,7 +2,6 @@ import './env.js';
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { runChildAcceptanceAutomation, runMainAcceptanceAutomation } from './automation/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.RENDERER_URL ?? 'http://127.0.0.1:5180';
@@ -93,7 +92,7 @@ function createMainWindow() {
     if (mainWindow === window) mainWindow = null;
   });
   window.maximize();
-  void loadMainPage(window).then(() => runMainAcceptanceAutomation(window));
+  void loadMainPage(window);
   return window;
 }
 
@@ -159,7 +158,6 @@ ipcMain.handle('project-client:open', async (_event, projectId: string) => {
   });
   try {
     await loadChildPage(window, projectId);
-    runChildAcceptanceAutomation(window);
   } catch (error) {
     projectWindows.delete(projectId);
     void markProjectClientClosed(projectId);
