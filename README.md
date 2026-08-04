@@ -32,16 +32,16 @@ Frontend Agent Admin 不是一个单点代码生成器，而是一个本地 AI A
 
 ## 技术架构
 
-| 模块 | 技术 |
-| --- | --- |
-| 桌面客户端 | Electron |
-| 前端 | React + TypeScript + Vite |
-| UI | Ant Design |
-| 本地服务 | Node.js + TypeScript |
-| 数据存储 | 本地 JSON 文件 |
-| 模型接入 | Ollama 本地模型、线上模型 |
-| 打包 | electron-builder |
-| 支持平台 | Windows、macOS |
+| 模块       | 技术                      |
+| ---------- | ------------------------- |
+| 桌面客户端 | Electron                  |
+| 前端       | React + TypeScript + Vite |
+| UI         | Ant Design                |
+| 本地服务   | Node.js + TypeScript      |
+| 数据存储   | 本地 JSON 文件            |
+| 模型接入   | Ollama 本地模型、线上模型 |
+| 打包       | electron-builder          |
+| 支持平台   | Windows、macOS            |
 
 ## 客户端设计
 
@@ -704,3 +704,13 @@ npm run package:mac
 ## 一句话介绍
 
 Frontend Agent Admin 是一款面向开发者的本地 AI Agent 开发工作台，通过主调度与多个专项 Agent，将需求分析、技术选型、代码生成、测试构建和交付文档串联成完整开发流程，帮助开发者更高效、更可控地完成项目开发。
+
+## License
+
+本项目采用 AGPL-3.0 协议开源。
+
+你可以自由学习、研究、修改和分发本项目代码。但如果你基于本项目修改、部署网络服务或发布衍生版本，需要按照 AGPL-3.0 的要求开放对应源码。
+
+如需企业闭源使用、商业集成、私有化交付、二次销售或不希望公开衍生代码，请联系作者获取商业授权。
+
+Copyright (c) 2026 chenergoug
