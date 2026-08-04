@@ -79,6 +79,7 @@
     "@ant-design/plots": "^2.6.5",
     "@vitejs/plugin-react": "^6.0.4",
     "antd": "^6.1.0",
+    "fast-uri": "^2.1.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tsx": "^4.21.0",
