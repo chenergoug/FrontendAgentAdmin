@@ -1,0 +1,50 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Frontend Agent Admin logo">
+  <defs>
+    <linearGradient id="bg" x1="78" y1="46" x2="438" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#121826"/>
+      <stop offset="0.48" stop-color="#1F3155"/>
+      <stop offset="1" stop-color="#113F45"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="142" y1="120" x2="373" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#69E4FF"/>
+      <stop offset="0.52" stop-color="#7CFFB2"/>
+      <stop offset="1" stop-color="#FFD166"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="146" y1="140" x2="372" y2="382" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+    <filter id="shadow" x="54" y="54" width="404" height="404" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="24"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.02 0 0 0 0 0.06 0 0 0 0 0.12 0 0 0 0.36 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#0B1020"/>
+  <g filter="url(#shadow)">
+    <rect x="76" y="76" width="360" height="360" rx="92" fill="url(#bg)"/>
+    <rect x="93" y="93" width="326" height="326" rx="78" stroke="white" stroke-opacity="0.12" stroke-width="2"/>
+  </g>
+
+  <path d="M160 326L230 166C239 146 273 146 282 166L352 326" stroke="url(#mark)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M198 262H314" stroke="url(#mark)" stroke-width="30" stroke-linecap="round"/>
+
+  <path d="M156 346H356C372.569 346 386 359.431 386 376V386H126V376C126 359.431 139.431 346 156 346Z" fill="url(#panel)" stroke="white" stroke-opacity="0.18" stroke-width="2"/>
+  <path d="M166 380H346" stroke="#9DEBFF" stroke-opacity="0.78" stroke-width="10" stroke-linecap="round"/>
+
+  <circle cx="152" cy="170" r="24" fill="#69E4FF"/>
+  <circle cx="360" cy="170" r="24" fill="#7CFFB2"/>
+  <circle cx="256" cy="386" r="24" fill="#FFD166"/>
+  <path d="M176 170H210" stroke="#69E4FF" stroke-width="10" stroke-linecap="round"/>
+  <path d="M302 170H336" stroke="#7CFFB2" stroke-width="10" stroke-linecap="round"/>
+  <path d="M256 350V362" stroke="#FFD166" stroke-width="10" stroke-linecap="round"/>
+
+  <path d="M134 228C120.745 228 110 238.745 110 252V260C110 273.255 120.745 284 134 284" stroke="#B9C7FF" stroke-opacity="0.86" stroke-width="14" stroke-linecap="round"/>
+  <path d="M378 228C391.255 228 402 238.745 402 252V260C402 273.255 391.255 284 378 284" stroke="#B9C7FF" stroke-opacity="0.86" stroke-width="14" stroke-linecap="round"/>
+</svg>
