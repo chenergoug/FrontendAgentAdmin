@@ -714,3 +714,5 @@ Frontend Agent Admin 是一款面向开发者的本地 AI Agent 开发工作台�
 如需企业闭源使用、商业集成、私有化交付、二次销售或不希望公开衍生代码，请联系作者获取商业授权。
 
 Copyright (c) 2026 chenergoug
+
+<!-- test pull request flow -->
