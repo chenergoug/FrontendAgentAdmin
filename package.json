@@ -25,6 +25,9 @@
       "output": "../FrontendAgentAdminRelease",
       "buildResources": "build"
     },
+    "extraMetadata": {
+      "main": "dist-electron/main.js"
+    },
     "files": [
       "dist/**",
       "dist-electron/**",
@@ -33,11 +36,16 @@
     ],
     "extraResources": [
       {
+        "from": "build",
+        "to": "build"
+      },
+      {
         "from": "config/default-data",
         "to": "default-data"
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

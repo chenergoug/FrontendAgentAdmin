@@ -32,6 +32,7 @@ export function AppShell({ activeMenu, onMenuChange, children }: AppShellProps) 
     <Layout className="app-layout">
       <Layout.Sider className="app-sider" width={208}>
         <div className="brand">
+          <img className="brand-logo" src="/favicon.svg" alt="Frontend Agent Admin" />
           <Typography.Text className="brand-title">Frontend Agent</Typography.Text>
         </div>
         <Menu

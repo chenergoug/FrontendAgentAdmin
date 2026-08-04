@@ -10,10 +10,30 @@
   background: #141922 !important;
 }
 
+.child-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 14px 18px 8px;
+}
+
+.child-brand-logo {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+}
+
+.child-brand-title {
+  color: #fff;
+  font-weight: 600;
+}
+
 .child-runtime-status {
   position: relative;
-  min-height: 52px;
-  padding: 16px 20px 10px;
+  min-height: 44px;
+  padding: 8px 20px 10px;
 }
 
 .child-runtime-content {

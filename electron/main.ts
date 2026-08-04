@@ -1,5 +1,6 @@
 import './env.js';
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain } from 'electron';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -10,6 +11,26 @@ const projectWindows = new Map<string, BrowserWindow>();
 const closingProjectIds = new Set<string>();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 let mainWindow: BrowserWindow | null = null;
+
+function resolveAppIcon() {
+  const iconName = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const candidates = app.isPackaged
+    ? [
+        path.join(process.resourcesPath, 'build', iconName),
+        path.join(process.resourcesPath, iconName),
+      ]
+    : [
+        path.join(app.getAppPath(), 'build', iconName),
+        path.join(app.getAppPath(), 'public', 'favicon.svg'),
+      ];
+  return candidates.find((candidate) => {
+    try {
+      return Boolean(candidate && existsSync(candidate));
+    } catch {
+      return false;
+    }
+  });
+}
 
 if (!hasSingleInstanceLock) {
   app.quit();
@@ -50,9 +71,12 @@ function createWindowOptions(title: string) {
     minWidth: 1200,
     minHeight: 760,
     title,
+    icon: resolveAppIcon(),
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
+      devTools: false,
       nodeIntegration: false,
     },
   };
@@ -189,6 +213,7 @@ ipcMain.handle('project-client:close', async (_event, projectId: string) => {
 });
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
   await startPackagedService();
   createMainWindow();
 });

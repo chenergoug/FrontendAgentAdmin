@@ -160,6 +160,10 @@ export function ChildApp() {
   return (
     <Layout className="child-layout">
       <Layout.Sider className="child-sider" width={220}>
+        <div className="child-brand">
+          <img className="child-brand-logo" src="/favicon.svg" alt="Frontend Agent Admin" />
+          <span className="child-brand-title">Frontend Agent</span>
+        </div>
         <div className="child-runtime-status">
           {hasProject && (
             <span className="child-runtime-content">

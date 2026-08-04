@@ -30,13 +30,23 @@ body {
 }
 
 .brand {
-  display: grid;
-  gap: 4px;
-  padding: 18px 18px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 14px 18px;
 }
 
 .brand-title {
   color: #fff;
+  font-weight: 600;
+}
+
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 8px;
 }
 
 .brand-subtitle {
